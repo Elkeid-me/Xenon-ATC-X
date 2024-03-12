@@ -1,9 +1,9 @@
 use super::ast::{Expr::*, ExprCategory::*, ExprConst::*, *};
-use super::parser::{ASTBuilder, Rule, Scope, SymbolTableItem::*};
+use super::parser::{ASTBuilder, ConstInit, Rule, Scope, Symbol};
 use super::ty::*;
 use pest::iterators::Pair;
 
-impl ASTBuilder<'_> {
+impl ASTBuilder {
     pub fn parse_expr(&self, expr: Pair<Rule>) -> Expr {
         self.expr_parser
             .map_primary(|exp| match exp.as_rule() {
@@ -149,15 +149,15 @@ impl ASTBuilder<'_> {
 
             Num(_) => Ok((RefType::Int, RValue, ConstEval)),
             Var(id) => match self.symbol_table.search(id) {
-                Some(Symbol(RefType::Int, Some(Init::Num(_)))) => Ok((RefType::Int, RValue, ConstEval)), // const 变量
-                Some(Symbol(RefType::Int, None)) => Ok((RefType::Int, LValue, NonConst)),                // 普通变量
-                Some(Symbol(RefType::IntArray(_), Some(_))) => Err(format!("孤立的 const 数组似乎干不了什么事...")), // const 数组
-                Some(Symbol(RefType::IntArray(len), None)) => Ok((RefType::IntPointer(&len[1..]), RValue, NonConst)), // 普通数组
-                Some(Symbol(RefType::IntPointer(len), None)) => Ok((RefType::IntPointer(len), RValue, NonConst)), // 普通指针
+                Some(Symbol(Type::Int, _, Some(ConstInit::Num(_)))) => Ok((RefType::Int, RValue, ConstEval)), // const 变量
+                Some(Symbol(Type::Int, _, None)) => Ok((RefType::Int, LValue, NonConst)),                     // 普通变量
+                Some(Symbol(Type::IntArray(_), _, Some(_))) => Err(format!("孤立的 const 数组似乎干不了什么事...")), // const 数组
+                Some(Symbol(Type::IntArray(len), _, None)) => Ok((RefType::IntPointer(&len[1..]), RValue, NonConst)), // 普通数组
+                Some(Symbol(Type::IntPointer(len), _, None)) => Ok((RefType::IntPointer(len), RValue, NonConst)), // 普通指针
                 _ => Err(format!("标识符 {id} 在当前作用域不存在")),
             },
             Func(id, exprs) => match self.symbol_table.search(id) {
-                Some(Symbol(RefType::Function(ret_type, paras_type), _)) => {
+                Some(Symbol(Type::Function(ret_type, paras_type), _, _)) => {
                     if exprs.len() != paras_type.len() {
                         return Err(format!("实参列表与函数 {id} 的签名不匹配"));
                     }
@@ -174,12 +174,12 @@ impl ASTBuilder<'_> {
                     }
                     Ok((ret_type.to_ref_type(), RValue, NonConst))
                 }
-                Some(Symbol(_, _)) => Err(format!("标识符 {id} 不是函数")),
-                _ => Err(format!("标识符 {id} 在当前作用域中不存在")),
+                Some(_) => Err(format!("标识符 {id} 不是函数")),
+                None => Err(format!("标识符 {id} 在当前作用域中不存在")),
             },
             Array(id, exprs) => match self.symbol_table.search(id) {
                 // const 数组
-                Some(Symbol(RefType::IntArray(len), Some(Init::ConstInitList(_)))) => match exprs.len().cmp(&len.len()) {
+                Some(Symbol(Type::IntArray(len), _, Some(ConstInit::List(_)))) => match exprs.len().cmp(&len.len()) {
                     std::cmp::Ordering::Less => Err(format!("常量数组 {id} 不能转为指针")),
                     std::cmp::Ordering::Equal => {
                         let mut const_eval = true;
@@ -199,11 +199,11 @@ impl ASTBuilder<'_> {
                     std::cmp::Ordering::Greater => Err(format!("下标运算符不能应用于整型对象")),
                 },
                 // 普通数组
-                Some(Symbol(RefType::IntArray(len), None)) => self.check_pointer(exprs, &len[1..]),
+                Some(Symbol(Type::IntArray(len), _, None)) => self.check_pointer(exprs, &len[1..]),
                 // 普通指针
-                Some(Symbol(RefType::IntPointer(len), _)) => self.check_pointer(exprs, len),
-                Some(Symbol(_, _)) => Err(format!("标识符 {id} 不是数组或指针")),
-                _ => Err(format!("标识符 {id} 在当前作用域中不存在")),
+                Some(Symbol(Type::IntPointer(len), _, _)) => self.check_pointer(exprs, len),
+                Some(_) => Err(format!("标识符 {id} 不是数组或指针")),
+                None => Err(format!("标识符 {id} 在当前作用域中不存在")),
             },
         }
     }
@@ -216,7 +216,7 @@ impl ASTBuilder<'_> {
         match expr {
             Num(i) => (Num(i), false),
             Var(x) => (Var(x), false),
-            _ => todo!(),
+            e => (e, false),
         }
     }
 

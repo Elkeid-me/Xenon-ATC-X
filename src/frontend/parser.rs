@@ -10,31 +10,32 @@ use std::collections::{HashMap, HashSet};
 #[grammar = "frontend/sysy.pest"]
 struct SysYParser;
 
-pub enum SymbolTableItem<'a> {
-    Symbol(RefType<'a>, Option<&'a Init>),
-    Keyword,
+// 符号的类型、重整化前的名字、常量初始化器
+pub enum ConstInit {
+    Num(i32),
+    List(ConstInitList),
 }
 
-use SymbolTableItem::*;
+pub struct Symbol(pub Type, pub String, pub Option<ConstInit>);
 
-pub struct SymbolTable<'a> {
-    table: Vec<HashMap<&'a str, SymbolTableItem<'a>>>,
-    global_name_table: HashSet<&'a str>,
-    local_name_table: Option<HashSet<&'a str>>,
+pub struct SymbolTable {
+    table: Vec<HashMap<String, Symbol>>,
+    global_name_table: HashSet<String>,
+    local_name_table: Option<HashSet<String>>,
 }
 
-pub trait Scope<'a> {
-    fn search(&self, identifier: &str) -> Option<&SymbolTableItem>;
-    fn insert_definition(&mut self, id: &'a str, symbol: SymbolTableItem<'a>) -> Result<(), String>;
+pub trait Scope {
+    fn search(&self, identifier: &str) -> Option<&Symbol>;
+    fn insert_definition(&mut self, id: String, ty: Type, init: Option<ConstInit>) -> Result<String, String>;
     fn enter_scope(&mut self);
     fn exit_scope(&mut self);
     fn enter_function(&mut self);
     fn exit_function(&mut self);
-    fn name_mangling(&self, id: String, ty: RefType) -> (String, usize);
+    fn name_mangling(&self, id: String, ty: &Type) -> (String, usize);
 }
 
-impl<'a> Scope<'a> for SymbolTable<'a> {
-    fn search(&self, identifier: &str) -> Option<&SymbolTableItem> {
+impl Scope for SymbolTable {
+    fn search(&self, identifier: &str) -> Option<&Symbol> {
         for map in self.table.iter().rev() {
             if let Some(info) = map.get(identifier) {
                 return Some(info);
@@ -42,11 +43,22 @@ impl<'a> Scope<'a> for SymbolTable<'a> {
         }
         None
     }
-    fn insert_definition(&mut self, id: &'a str, symbol: SymbolTableItem<'a>) -> Result<(), String> {
-        match self.table.last_mut().unwrap().insert(id, symbol) {
-            Some(SymbolTableItem::Keyword) => Err(format!("标识符 {} 是关键字，不能重定义", id)),
-            Some(_) => Err(format!("标识符 {} 在当前作用域中已存在", id)),
-            None => Ok(()),
+    fn insert_definition(&mut self, id: String, ty: Type, init: Option<ConstInit>) -> Result<String, String> {
+        let (mangled_id, prefix_len) = match ty {
+            Type::Int | Type::IntPointer(_) | Type::IntArray(_) => self.name_mangling(id, &ty),
+            _ => (id, 0),
+        };
+        let original_id = mangled_id[prefix_len..].to_string();
+        match self.table.last_mut().unwrap().insert(original_id.clone(), Symbol(ty, mangled_id.clone(), init)) {
+            Some(Symbol(Type::Keyword, _, _)) => Err(format!("标识符 {original_id} 是关键字，不能重定义")),
+            Some(_) => Err(format!("标识符 {original_id} 在当前作用域中已存在")),
+            None => {
+                match &mut self.local_name_table {
+                    Some(m) => m.insert(mangled_id.clone()),
+                    None => self.global_name_table.insert(mangled_id.clone()),
+                };
+                Ok(mangled_id)
+            }
         }
     }
     fn enter_scope(&mut self) {
@@ -55,21 +67,22 @@ impl<'a> Scope<'a> for SymbolTable<'a> {
     fn exit_scope(&mut self) {
         self.table.pop();
     }
-    fn name_mangling(&self, mut id: String, ty: RefType) -> (String, usize) {
+    fn name_mangling(&self, mut id: String, ty: &Type) -> (String, usize) {
         let origin_len = id.len();
         loop {
             id = match ty {
-                RefType::Int => format!("_I_{id}"),
-                RefType::IntPointer(_) => format!("_P_{id}"),
-                RefType::IntArray(_) => format!("_A_{id}"),
+                Type::Int => format!("_I{id}"),
+                Type::IntPointer(_) => format!("_P{id}"),
+                Type::IntArray(_) => format!("_A{id}"),
                 _ => unreachable!(),
             };
             if !(match &self.local_name_table {
                 Some(m) => m.contains(id.as_str()),
                 None => false,
-            } || self.global_name_table.contains(id.as_str()))
+            }) && !(self.global_name_table.contains(id.as_str()))
             {
-                return (id, origin_len);
+                let len = id.len() - origin_len;
+                return (id, len);
             }
         }
     }
@@ -80,15 +93,13 @@ impl<'a> Scope<'a> for SymbolTable<'a> {
         self.local_name_table = None;
     }
 }
-pub struct ASTBuilder<'a> {
+pub struct ASTBuilder {
     pub expr_parser: PrattParser<Rule>,
-    pub symbol_table: SymbolTable<'a>,
+    pub symbol_table: SymbolTable,
 }
 
-impl ASTBuilder<'_> {
+impl ASTBuilder {
     pub(in super::parser) fn new() -> Self {
-        static L_1: [Type; 1] = [Type::IntPointer(Vec::new())];
-        static L_2: [Type; 2] = [Type::Int, Type::IntPointer(Vec::new())];
         let expr_parser = PrattParser::new()
             .op(Op::infix(Rule::assignment, Right)
                 | Op::infix(Rule::add_assign, Right)
@@ -120,24 +131,38 @@ impl ASTBuilder<'_> {
                 | Op::prefix(Rule::pre_dec))
             .op(Op::postfix(Rule::post_inc) | Op::postfix(Rule::post_dec));
         let table = vec![HashMap::from([
-            ("getint", Symbol(RefType::Function(&Type::Int, &[]), None)),
-            ("getch", Symbol(RefType::Function(&Type::Int, &[]), None)),
-            ("getarray", Symbol(RefType::Function(&Type::Int, &L_1), None)),
-            ("putint", Symbol(RefType::Function(&Type::Void, &[Type::Int]), None)),
-            ("putch", Symbol(RefType::Function(&Type::Void, &[Type::Int]), None)),
-            ("putarray", Symbol(RefType::Function(&Type::Int, &L_2), None)),
-            ("starttime", Symbol(RefType::Function(&Type::Void, &[]), None)),
-            ("stoptime", Symbol(RefType::Function(&Type::Void, &[]), None)),
-            ("if", SymbolTableItem::Keyword),
-            ("while", SymbolTableItem::Keyword),
-            ("break", SymbolTableItem::Keyword),
-            ("continue", SymbolTableItem::Keyword),
-            ("return", SymbolTableItem::Keyword),
-            ("int", SymbolTableItem::Keyword),
-            ("const", SymbolTableItem::Keyword),
-            ("void", SymbolTableItem::Keyword),
+            ("getint".to_string(), Symbol(Type::Function(Box::new(Type::Int), Vec::new()), String::new(), None)),
+            ("getch".to_string(), Symbol(Type::Function(Box::new(Type::Int), Vec::new()), String::new(), None)),
+            (
+                "getarray".to_string(),
+                Symbol(Type::Function(Box::new(Type::Int), vec![Type::IntPointer(Vec::new())]), String::new(), None),
+            ),
+            ("putint".to_string(), Symbol(Type::Function(Box::new(Type::Void), vec![Type::Int]), String::new(), None)),
+            ("putch".to_string(), Symbol(Type::Function(Box::new(Type::Void), vec![Type::Int]), String::new(), None)),
+            (
+                "putarray".to_string(),
+                Symbol(Type::Function(Box::new(Type::Int), vec![Type::Int, Type::IntPointer(Vec::new())]), String::new(), None),
+            ),
+            ("starttime".to_string(), Symbol(Type::Function(Box::new(Type::Void), Vec::new()), String::new(), None)),
+            ("stoptime".to_string(), Symbol(Type::Function(Box::new(Type::Void), Vec::new()), String::new(), None)),
+            ("if".to_string(), Symbol(Type::Keyword, String::new(), None)),
+            ("while".to_string(), Symbol(Type::Keyword, String::new(), None)),
+            ("break".to_string(), Symbol(Type::Keyword, String::new(), None)),
+            ("continue".to_string(), Symbol(Type::Keyword, String::new(), None)),
+            ("return".to_string(), Symbol(Type::Keyword, String::new(), None)),
+            ("int".to_string(), Symbol(Type::Keyword, String::new(), None)),
+            ("const".to_string(), Symbol(Type::Keyword, String::new(), None)),
+            ("void".to_string(), Symbol(Type::Keyword, String::new(), None)),
         ])];
-        let global_name_table = HashSet::from(["getint", "getch", "getarray", "putint", "putarray", "starttime", "stoptime"]);
+        let global_name_table = HashSet::from([
+            "getint".to_string(),
+            "getch".to_string(),
+            "getarray".to_string(),
+            "putint".to_string(),
+            "putarray".to_string(),
+            "starttime".to_string(),
+            "stoptime".to_string(),
+        ]);
         let symbol_table = SymbolTable {
             table,
             global_name_table,
@@ -158,7 +183,10 @@ impl ASTBuilder<'_> {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
                 match self.process_expr_impl(iter.next().unwrap())? {
-                    (Num(i), _, ConstEval) => Ok((Type::Int, id, Some(Init::Num(i)))),
+                    (Num(i), _, ConstEval) => {
+                        let new_id = self.symbol_table.insert_definition(id, Type::Int, Some(ConstInit::Num(i)))?;
+                        Ok((Type::Int, new_id, Some(Init::Num(i))))
+                    }
                     (e, _, _) => Err(format!("表达式 {e:?} 不是整型常量表达式")),
                 }
             }
@@ -166,10 +194,16 @@ impl ASTBuilder<'_> {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
                 match iter.next().map(|expr| self.process_expr_impl(expr)) {
-                    Some(Ok((expr, RefType::Int, _))) => Ok((Type::Int, id, Some(Init::Expr(expr)))),
+                    Some(Ok((expr, RefType::Int, _))) => {
+                        let new_id = self.symbol_table.insert_definition(id, Type::Int, None)?;
+                        Ok((Type::Int, new_id, Some(Init::Expr(expr))))
+                    }
                     Some(Ok((expr, _, _))) => Err(format!("表达式 {expr:?} 不是整型表达式")),
                     Some(Err(s)) => Err(s),
-                    None => Ok((Type::Int, id, None)),
+                    None => {
+                        let new_id = self.symbol_table.insert_definition(id, Type::Int, None)?;
+                        Ok((Type::Int, new_id, None))
+                    }
                 }
             }
             Rule::const_array_definition => {
@@ -205,11 +239,9 @@ impl ASTBuilder<'_> {
             Rule::block => self.parse_block(pair, in_while, ret_type),
             Rule::statement => Ok(vec![BlockItem::Statement(self.parse_statement(pair, in_while, ret_type)?)]),
             Rule::empty_statement => Ok(Vec::new()),
-            Rule::definitions_in_if_or_while_non_block => pair
-                .into_inner()
-                .skip(1)
-                .map(|pair| Ok(BlockItem::Def(self.parse_definition(pair)?)))
-                .collect::<Result<_, _>>(),
+            Rule::definitions_in_if_or_while_non_block => {
+                pair.into_inner().skip(1).map(|pair| Ok(BlockItem::Def(self.parse_definition(pair)?))).collect::<Result<_, _>>()
+            }
             _ => unreachable!(),
         }
     }
@@ -330,17 +362,19 @@ impl ASTBuilder<'_> {
         let mut iter = func.into_inner();
         let (id, ret_ty, para_type, para_id) = self.parse_signature(iter.next().unwrap())?;
 
+        let mangled_id =
+            self.symbol_table.insert_definition(id, Type::Function(Box::new(ret_ty.clone()), para_type.clone()), None)?;
         self.symbol_table.enter_function();
         let block = self.parse_block(iter.next().unwrap(), false, ret_ty.to_ref_type())?;
         self.symbol_table.exit_function();
 
-        Ok((Type::Function(Box::new(ret_ty), para_type), id, Some(Init::Function(para_id, block))))
+        Ok((Type::Function(Box::new(ret_ty), para_type), mangled_id, Some(Init::Function(para_id, block))))
     }
 
     fn parse_global_item(&mut self, pair: Pair<Rule>) -> Result<Definition, String> {
         match pair.as_rule() {
             Rule::variable_definition | Rule::array_definition | Rule::const_variable_definition | Rule::const_array_definition => {
-                todo!()
+                self.parse_definition(pair)
             }
             Rule::func_def => self.parse_function(pair),
             _ => unreachable!(),
@@ -354,7 +388,11 @@ impl ASTBuilder<'_> {
             .map(|pair| self.parse_global_item(pair))
             .collect::<Result<TranslationUnit, _>>()?;
         match self.symbol_table.search("main") {
-            Some(Symbol(RefType::Function(&Type::Int, &[]), None)) => Ok(ast),
+            Some(Symbol(Type::Function(ret_type, para_ty), _, None))
+                if matches!(ret_type.as_ref(), Type::Int) && para_ty.len() == 0 =>
+            {
+                Ok(ast)
+            }
             _ => Err("没有 main 函数，或 main 函数不符合要求".to_string()),
         }
     }

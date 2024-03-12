@@ -10,6 +10,7 @@ pub enum Init {
     Num(i32),
     ConstInitList(ConstInitList),
     InitList(InitList),
+    Block(Block),
 }
 
 #[derive(Debug)]
