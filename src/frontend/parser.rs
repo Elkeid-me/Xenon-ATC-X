@@ -223,6 +223,20 @@ impl ASTBuilder<'_> {
             .parse(expr.into_inner())
     }
 
+    // len 是指针长度
+    fn check_pointer<'a>(&self, exprs: &[Expr], len: &'a [usize]) -> Result<(RefType<'a>, ExprCategory, ExprConst), String> {
+        for expr in exprs {
+            if !matches!(self.expr_type(expr)?, RefType::Int) {
+                return Err(format!("表达式 {expr:?} 不是整型表达式"));
+            }
+        }
+        match exprs.len().cmp(&(len.len() + 1)) {
+            std::cmp::Ordering::Less => Ok((RefType::IntPointer(&len[exprs.len() - 1..]), RValue, NonConst)),
+            std::cmp::Ordering::Equal => Ok((RefType::Int, LValue, NonConst)),
+            std::cmp::Ordering::Greater => Err(format!("下标运算符不能应用于整型对象")),
+        }
+    }
+
     // 返回值：表达式的值类型、是否为可修改左值、是否为整型常量表达式
     fn expr_check(&self, expr: &Expr) -> Result<(RefType, ExprCategory, ExprConst), String> {
         match expr {
@@ -294,7 +308,7 @@ impl ASTBuilder<'_> {
                     }
                     for (expect_type, expr) in paras_type.iter().zip(exprs.iter()) {
                         let valid = match (expect_type, self.expr_type(expr)?) {
-                            (Type::Int, RefType::Int) | (Type::Void, RefType::Void) => true,
+                            (Type::Int, RefType::Int) => true,
                             (Type::IntArray(l), RefType::IntArray(r)) => l == r,
                             (Type::IntArray(l), RefType::IntPointer(r)) => &l[1..] == r,
                             _ => false,
@@ -309,9 +323,30 @@ impl ASTBuilder<'_> {
                 _ => Err(format!("标识符 {id} 在当前作用域中不存在")),
             },
             Array(id, exprs) => match self.symbol_table.search(id) {
-                Some(Symbol(RefType::IntArray(len), Some(Init::ConstInitList(list)))) => todo!(), // const 数组
-                Some(Symbol(RefType::IntArray(len), None)) => todo!(),                            // 普通数组
-                Some(Symbol(RefType::IntPointer(len), _)) => todo!(),                             // 普通指针
+                // const 数组
+                Some(Symbol(RefType::IntArray(len), Some(Init::ConstInitList(_)))) => match exprs.len().cmp(&len.len()) {
+                    std::cmp::Ordering::Less => Err(format!("常量数组 {id} 不能转为指针")),
+                    std::cmp::Ordering::Equal => {
+                        let mut const_eval = true;
+                        for expr in exprs {
+                            let (ty, _, is_const) = self.expr_check(expr)?;
+                            if !matches!(ty, RefType::Int) {
+                                return Err(format!("表达式 {expr:?} 不是整型表达式"));
+                            }
+                            const_eval &= matches!(is_const, ConstEval);
+                        }
+                        if const_eval {
+                            Ok((RefType::Int, RValue, ConstEval))
+                        } else {
+                            Ok((RefType::Int, RValue, NonConst))
+                        }
+                    }
+                    std::cmp::Ordering::Greater => Err(format!("下标运算符不能应用于整型对象")),
+                },
+                // 普通数组
+                Some(Symbol(RefType::IntArray(len), None)) => self.check_pointer(exprs, &len[1..]),
+                // 普通指针
+                Some(Symbol(RefType::IntPointer(len), _)) => self.check_pointer(exprs, len),
                 Some(Symbol(_, _)) => Err(format!("标识符 {id} 不是数组或指针")),
                 _ => Err(format!("标识符 {id} 在当前作用域中不存在")),
             },
@@ -542,11 +577,15 @@ impl ASTBuilder<'_> {
     }
 
     fn parse(mut self, code: &str) -> Result<TranslationUnit, String> {
-        SysYParser::parse(Rule::translation_unit, code)
+        let ast = SysYParser::parse(Rule::translation_unit, code)
             .unwrap()
             .filter(|pair| !matches!(pair.as_rule(), Rule::EOI | Rule::int_keyword | Rule::const_keyword))
             .map(|pair| self.parse_global_item(pair))
-            .collect::<Result<TranslationUnit, _>>()
+            .collect::<Result<TranslationUnit, _>>()?;
+        match self.symbol_table.search("main") {
+            Some(Symbol(RefType::Function(&Type::Int, &[]), None)) => Ok(ast),
+            _ => Err("没有 main 函数，或 main 函数不符合要求".to_string()),
+        }
     }
 }
 
