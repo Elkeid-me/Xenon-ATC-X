@@ -1,4 +1,5 @@
 mod ast;
+mod expr;
 mod parser;
 mod ty;
 
