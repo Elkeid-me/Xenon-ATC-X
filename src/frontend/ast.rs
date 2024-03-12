@@ -10,7 +10,6 @@ pub enum Init {
     Num(i32),
     ConstInitList(ConstInitList),
     InitList(InitList),
-    Block(Block),
 }
 
 #[derive(Debug)]
@@ -110,9 +109,9 @@ pub enum ExprConst {
 }
 
 impl Expr {
-    pub fn get_num(self) -> i32 {
+    pub fn get_num(&self) -> i32 {
         match self {
-            Expr::Num(i) => i,
+            Expr::Num(i) => *i,
             _ => unreachable!(),
         }
     }

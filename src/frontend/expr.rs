@@ -82,7 +82,7 @@ impl ASTBuilder {
     pub fn check_pointer<'a>(&self, exprs: &[Expr], len: &'a [usize]) -> Result<(RefType<'a>, ExprCategory, ExprConst), String> {
         for expr in exprs {
             if !matches!(self.expr_type(expr)?, RefType::Int) {
-                return Err(format!("表达式 {expr:?} 不是整型表达式"));
+                return Err(format!("{expr:?} 不是整型表达式"));
             }
         }
         match exprs.len().cmp(&(len.len() + 1)) {
@@ -126,12 +126,12 @@ impl ASTBuilder {
 
             PostInc(e) | PostDec(e) => match self.expr_check(e)? {
                 (RefType::Int, LValue, _) => Ok((RefType::Int, RValue, NonConst)),
-                _ => Err(format!("{e:?} 不是整型表达式或左值表达式")),
+                _ => Err(format!("{e:?} 不是左值表达式")),
             },
 
             PreInc(e) | PreDec(e) => match self.expr_check(e)? {
                 (RefType::Int, LValue, _) => Ok((RefType::Int, LValue, NonConst)),
-                _ => Err(format!("{e:?} 不是整型表达式或左值表达式")),
+                _ => Err(format!("{e:?} 不是左值表达式")),
             },
 
             Assignment(l, r)
@@ -169,7 +169,7 @@ impl ASTBuilder {
                             _ => false,
                         };
                         if !valid {
-                            return Err(format!("表达式 {expr:?} 与类型 {expect_type:?} 不兼容"));
+                            return Err(format!("{expr:?} 与类型 {expect_type:?} 不兼容"));
                         }
                     }
                     Ok((ret_type.to_ref_type(), RValue, NonConst))
@@ -186,7 +186,7 @@ impl ASTBuilder {
                         for expr in exprs {
                             let (ty, _, is_const) = self.expr_check(expr)?;
                             if !matches!(ty, RefType::Int) {
-                                return Err(format!("表达式 {expr:?} 不是整型表达式"));
+                                return Err(format!("{expr:?} 不是整型表达式"));
                             }
                             const_eval &= matches!(is_const, ConstEval);
                         }
@@ -212,18 +212,167 @@ impl ASTBuilder {
         Ok(self.expr_check(expr)?.0)
     }
 
-    pub fn simplify(&self, expr: Expr) -> (Expr, bool) {
+    fn simplify(&self, mut expr: Expr) -> (Expr, bool, bool) {
+        let mut simplified;
+        let mut side_effect;
+        loop {
+            (expr, simplified, side_effect) = self.simplify_impl(expr);
+            if !simplified {
+                return (expr, simplified, side_effect);
+            }
+        }
+    }
+    // 返回值类型：表达式、此轮是否化简、表达式有无副作用
+    fn simplify_impl(&self, expr: Expr) -> (Expr, bool, bool) {
         match expr {
-            Num(i) => (Num(i), false),
-            Var(x) => (Var(x), false),
-            e => (e, false),
+            Num(i) => (Num(i), false, false),
+            Var(x) => match self.symbol_table.search(&x).unwrap() {
+                Symbol(_, _, Some(ConstInit::Num(i))) => (Num(*i), true, false),
+                Symbol(_, mangled_name, _) => (Var(mangled_name.clone()), false, false),
+            },
+            Add(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a + b), true, false),
+                ((Num(0), _, _), (e, _, e_se)) => (e, true, e_se),
+                ((e, _, e_se), (Num(0), _, _)) => (e, true, e_se),
+                ((l, _, l_se), (Nega(r), _, r_se)) => (Sub(Box::new(l), r), true, l_se || r_se),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Add(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Sub(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a - b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Sub(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Mul(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a * b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Mul(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Div(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a / b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Div(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Mod(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a % b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Mod(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            ShL(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a << b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (ShL(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            ShR(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a >> b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (ShR(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Xor(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a ^ b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Xor(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            And(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a & b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (And(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Or(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num(a | b), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Or(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Eq(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num((a == b) as i32), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Eq(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Neq(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num((a != b) as i32), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Neq(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Grt(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num((a > b) as i32), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Grt(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Geq(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num((a >= b) as i32), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Geq(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Les(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num((a < b) as i32), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Les(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            Leq(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num((a <= b) as i32), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (Leq(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            LogicAnd(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num((a != 0 && b != 0) as i32), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (LogicAnd(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            LogicOr(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((Num(a), _, _), (Num(b), _, _)) => (Num((a != 0 || b != 0) as i32), true, false),
+                ((l, l_s, l_se), (r, r_s, r_se)) => (LogicOr(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
+            },
+            LogicNot(expr) => match self.simplify(*expr) {
+                (Num(a), _, _) => (Num((a == 0) as i32), true, false),
+                (e, e_s, e_se) => (LogicNot(Box::new(e)), e_s, e_se),
+            },
+            Nega(expr) => match self.simplify(*expr) {
+                (Num(a), _, _) => (Num(-a), true, false),
+                (Nega(e), _, e_se) => (*e, true, e_se),
+                (e, e_s, e_se) => (Nega(Box::new(e)), e_s, e_se),
+            },
+            Not(expr) => match self.simplify(*expr) {
+                (Num(a), _, _) => (Num(!a), true, false),
+                (e, e_s, e_se) => (Not(Box::new(e)), e_s, e_se),
+            },
+            PostInc(expr) => match self.simplify(*expr) {
+                (e, e_s, _) => (PostInc(Box::new(e)), e_s, true),
+            },
+            PostDec(expr) => match self.simplify(*expr) {
+                (e, e_s, _) => (PostDec(Box::new(e)), e_s, true),
+            },
+            PreInc(expr) => match self.simplify(*expr) {
+                (e, e_s, _) => (PreInc(Box::new(e)), e_s, true),
+            },
+            PreDec(expr) => match self.simplify(*expr) {
+                (e, e_s, _) => (PreDec(Box::new(e)), e_s, true),
+            },
+            Assignment(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (Assignment(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            AddAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (AddAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            SubAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (SubAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            MulAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (MulAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            AndAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (AndAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            OrAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (OrAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            XorAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (XorAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            ShLAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (ShLAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            SaRAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (SaRAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            Func(id, args) => {
+                let args_simplified = args.into_iter().map(|expr| self.simplify(expr).0).collect();
+                (Func(id, args_simplified), false, true)
+            }
+            Array(id, exprs) => {
+                let mangled_name = self.symbol_table.search(&id).unwrap().1.clone();
+                let exprs_simplified = exprs.into_iter().map(|expr| self.simplify(expr).0).collect();
+                (Array(mangled_name, exprs_simplified), false, true)
+            }
         }
     }
 
     pub fn process_expr_impl(&self, expr: Pair<Rule>) -> Result<(Expr, RefType, ExprConst), String> {
         let expr = self.parse_expr(expr);
         let (ty, _, is_const) = self.expr_check(&expr)?;
-        let (expr, _) = self.simplify(expr);
+        let (expr, _, _) = self.simplify(expr);
         Ok((expr, ty, is_const))
     }
 

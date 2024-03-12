@@ -11,11 +11,13 @@ use std::collections::{HashMap, HashSet};
 struct SysYParser;
 
 // 符号的类型、重整化前的名字、常量初始化器
+#[derive(Debug)]
 pub enum ConstInit {
     Num(i32),
     List(ConstInitList),
 }
 
+#[derive(Debug)]
 pub struct Symbol(pub Type, pub String, pub Option<ConstInit>);
 
 pub struct SymbolTable {
@@ -34,10 +36,30 @@ pub trait Scope {
     fn name_mangling(&self, id: String, ty: &Type) -> (String, usize);
 }
 
+fn demangling<'a>(mut id: &'a str) -> &'a str {
+    if id.len() < 2 {
+        return id;
+    }
+    let prefix = match &id[0..2] {
+        "_I" => "_I",
+        "_A" => "_A",
+        "_P" => "_P",
+        _ => return id,
+    };
+    loop {
+        id = &id[2..];
+        if !id.starts_with(prefix) {
+            return id;
+        }
+    }
+}
+
 impl Scope for SymbolTable {
-    fn search(&self, identifier: &str) -> Option<&Symbol> {
+    fn search(&self, mut id: &str) -> Option<&Symbol> {
+        // 去重整化
+        id = demangling(id);
         for map in self.table.iter().rev() {
-            if let Some(info) = map.get(identifier) {
+            if let Some(info) = map.get(id) {
                 return Some(info);
             }
         }
@@ -48,8 +70,8 @@ impl Scope for SymbolTable {
             Type::Int | Type::IntPointer(_) | Type::IntArray(_) => self.name_mangling(id, &ty),
             _ => (id, 0),
         };
-        let original_id = mangled_id[prefix_len..].to_string();
-        match self.table.last_mut().unwrap().insert(original_id.clone(), Symbol(ty, mangled_id.clone(), init)) {
+        let original_id = &mangled_id[prefix_len..];
+        match self.table.last_mut().unwrap().insert(original_id.to_string(), Symbol(ty, mangled_id.clone(), init)) {
             Some(Symbol(Type::Keyword, _, _)) => Err(format!("标识符 {original_id} 是关键字，不能重定义")),
             Some(_) => Err(format!("标识符 {original_id} 在当前作用域中已存在")),
             None => {
@@ -88,8 +110,10 @@ impl Scope for SymbolTable {
     }
     fn enter_function(&mut self) {
         self.local_name_table = Some(HashSet::new());
+        self.enter_scope();
     }
     fn exit_function(&mut self) {
+        self.exit_scope();
         self.local_name_table = None;
     }
 }
@@ -173,9 +197,29 @@ impl ASTBuilder {
             symbol_table,
         }
     }
-    // fn iter_to_usize_vec(&self, iter: Pairs<Rule>) -> Result<> {
-    //     Pairs.
-    // }
+
+    fn iter_to_vec(&self, iter: Option<Pair<Rule>>) -> Result<Vec<usize>, String> {
+        match iter {
+            Some(i) => i
+                .into_inner()
+                .map(|expr| {
+                    let (expr, _, is_const) = self.process_expr_impl(expr)?;
+                    match is_const {
+                        ConstEval => {
+                            let i = expr.get_num();
+                            if i > 0 {
+                                Ok(i as usize)
+                            } else {
+                                Err(format!("{expr:?} 的值不是正整数"))
+                            }
+                        }
+                        NonConst => Err(format!("{expr:?} 不是整型常量表达式")),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>(),
+            None => Ok(Vec::new()),
+        }
+    }
 
     fn parse_definition(&mut self, pair: Pair<Rule>) -> Result<Definition, String> {
         match pair.as_rule() {
@@ -187,7 +231,7 @@ impl ASTBuilder {
                         let new_id = self.symbol_table.insert_definition(id, Type::Int, Some(ConstInit::Num(i)))?;
                         Ok((Type::Int, new_id, Some(Init::Num(i))))
                     }
-                    (e, _, _) => Err(format!("表达式 {e:?} 不是整型常量表达式")),
+                    (e, _, _) => Err(format!("{e:?} 不是整型常量表达式")),
                 }
             }
             Rule::variable_definition => {
@@ -198,7 +242,7 @@ impl ASTBuilder {
                         let new_id = self.symbol_table.insert_definition(id, Type::Int, None)?;
                         Ok((Type::Int, new_id, Some(Init::Expr(expr))))
                     }
-                    Some(Ok((expr, _, _))) => Err(format!("表达式 {expr:?} 不是整型表达式")),
+                    Some(Ok((expr, _, _))) => Err(format!("{expr:?} 不是整型表达式")),
                     Some(Err(s)) => Err(s),
                     None => {
                         let new_id = self.symbol_table.insert_definition(id, Type::Int, None)?;
@@ -209,26 +253,18 @@ impl ASTBuilder {
             Rule::const_array_definition => {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
-                let len = iter
-                    .next()
-                    .unwrap()
-                    .into_inner()
-                    .map(|expr| Ok(self.process_expr(expr)?.get_num() as usize))
-                    .collect::<Result<Vec<_>, String>>()?;
+                let len = self.iter_to_vec(iter.next())?;
                 let init_list = Vec::new();
-                Ok((Type::IntArray(len), id, Some(Init::ConstInitList(init_list))))
+                let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
+                Ok((Type::IntArray(len), mangled_id, Some(Init::ConstInitList(init_list))))
             }
             Rule::array_definition => {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
-                let len = iter
-                    .next()
-                    .unwrap()
-                    .into_inner()
-                    .map(|expr| Ok(self.process_expr(expr)?.get_num() as usize))
-                    .collect::<Result<Vec<_>, String>>()?;
+                let len = self.iter_to_vec(iter.next())?;
                 let init_list = Vec::new();
-                Ok((Type::IntArray(len), id, Some(Init::InitList(init_list))))
+                let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
+                Ok((Type::IntArray(len), mangled_id, Some(Init::InitList(init_list))))
             }
             _ => unreachable!(),
         }
@@ -327,19 +363,7 @@ impl ASTBuilder {
             Rule::ptr_parameter_def => {
                 let mut iter = para.into_inner().skip(1);
                 let id = iter.next().unwrap().as_str().to_string();
-                let lengths = match iter.next() {
-                    Some(i) => i
-                        .into_inner()
-                        .map(|expr| {
-                            let (expr, _, is_const) = self.process_expr_impl(expr)?;
-                            match is_const {
-                                ConstEval => Ok(expr.get_num() as usize),
-                                NonConst => Err(format!("{expr:?} 不是整型常量表达式")),
-                            }
-                        })
-                        .collect::<Result<Vec<usize>, _>>()?,
-                    None => Vec::new(),
-                };
+                let lengths = self.iter_to_vec(iter.next())?;
                 Ok((id, Type::IntPointer(lengths)))
             }
             _ => unreachable!(),
@@ -360,11 +384,14 @@ impl ASTBuilder {
 
     fn parse_function(&mut self, func: Pair<Rule>) -> Result<Definition, String> {
         let mut iter = func.into_inner();
-        let (id, ret_ty, para_type, para_id) = self.parse_signature(iter.next().unwrap())?;
+        let (id, ret_ty, para_type, mut para_id) = self.parse_signature(iter.next().unwrap())?;
 
         let mangled_id =
             self.symbol_table.insert_definition(id, Type::Function(Box::new(ret_ty.clone()), para_type.clone()), None)?;
         self.symbol_table.enter_function();
+        for (ty, id) in para_type.iter().zip(para_id.iter_mut()) {
+            *id = self.symbol_table.insert_definition(id.clone(), ty.clone(), None)?;
+        }
         let block = self.parse_block(iter.next().unwrap(), false, ret_ty.to_ref_type())?;
         self.symbol_table.exit_function();
 
