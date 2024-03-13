@@ -115,7 +115,7 @@ integer_bin = @{ ("0b" | "0B") ~ ASCII_BIN_DIGIT+ }
 
 block = { "{" ~ (block | non_block_block_item)* ~ "}" }
 
-statement            =  { while_statement | if_statement | (continue_keyword | break_keyword | return_statement | expression | "") ~ ";"}
+statement            = _{ while_statement | if_statement | (continue_keyword | break_keyword | return_statement | expression | "") ~ ";"}
 all_definitions      = _{ (const_definitions | definitions) ~ ";" }
 non_block_block_item = _{ statement | all_definitions }
 

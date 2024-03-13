@@ -164,7 +164,7 @@ impl InitListTrait for InitListItem {
 }
 
 impl ASTBuilder {
-    pub(in super::parser) fn new() -> Self {
+    fn new() -> Self {
         let expr_parser = PrattParser::new()
             .op(Op::infix(Rule::assignment, Right)
                 | Op::infix(Rule::add_assign, Right)
@@ -417,7 +417,12 @@ impl ASTBuilder {
     fn parse_if_while_helper(&mut self, pair: Pair<Rule>, in_while: bool, ret_type: RefType) -> Result<Block, String> {
         match pair.as_rule() {
             Rule::block => self.parse_block(pair, in_while, ret_type),
-            Rule::statement => Ok(vec![BlockItem::Statement(self.parse_statement(pair, in_while, ret_type)?)]),
+            Rule::expression
+            | Rule::return_statement
+            | Rule::if_statement
+            | Rule::while_statement
+            | Rule::break_keyword
+            | Rule::continue_keyword => Ok(vec![BlockItem::Statement(self.parse_statement(pair, in_while, ret_type)?)]),
             Rule::empty_statement => Ok(Vec::new()),
             Rule::definitions_in_if_or_while_non_block => {
                 pair.into_inner().skip(1).map(|pair| Ok(BlockItem::Def(self.parse_definition(pair)?))).collect::<Result<_, _>>()
@@ -446,8 +451,8 @@ impl ASTBuilder {
         ))
     }
 
-    fn parse_statement(&mut self, pair: Pair<Rule>, in_while: bool, ret_type: RefType) -> Result<Statement, String> {
-        let iter = pair.into_inner().next().unwrap();
+    fn parse_statement(&mut self, iter: Pair<Rule>, in_while: bool, ret_type: RefType) -> Result<Statement, String> {
+        // let iter = pair.into_inner().next().unwrap();
         match iter.as_rule() {
             Rule::expression => Ok(Statement::Expr(self.process_expr(iter)?)),
             Rule::return_statement => match (iter.into_inner().skip(1).next().map(|expr| self.process_expr_impl(expr)), ret_type) {
@@ -483,7 +488,12 @@ impl ASTBuilder {
             .filter(|pair| !matches!(pair.as_rule(), Rule::int_keyword | Rule::const_keyword))
             .map(|pair| match pair.as_rule() {
                 Rule::block => Ok(BlockItem::Block(self.parse_block(pair, in_while, ret_type)?)),
-                Rule::statement => Ok(BlockItem::Statement(self.parse_statement(pair, in_while, ret_type)?)),
+                Rule::expression
+                | Rule::return_statement
+                | Rule::if_statement
+                | Rule::while_statement
+                | Rule::break_keyword
+                | Rule::continue_keyword => Ok(BlockItem::Statement(self.parse_statement(pair, in_while, ret_type)?)),
                 Rule::variable_definition
                 | Rule::array_definition
                 | Rule::const_variable_definition
