@@ -6,7 +6,7 @@ use super::ty::*;
 use pest::iterators::Pair;
 
 impl ASTBuilder {
-    pub fn parse_expr(&self, expr: Pair<Rule>) -> Expr {
+    fn parse_expr(&self, expr: Pair<Rule>) -> Expr {
         self.expr_parser
             .map_primary(|exp| match exp.as_rule() {
                 Rule::expression => self.parse_expr(exp),
@@ -81,7 +81,7 @@ impl ASTBuilder {
     }
 
     // len 是指针长度
-    pub fn check_pointer<'a>(&self, exprs: &[Expr], len: &'a [usize]) -> Result<(RefType<'a>, ExprCategory, ExprConst), String> {
+    fn check_pointer<'a>(&self, exprs: &[Expr], len: &'a [usize]) -> Result<(RefType<'a>, ExprCategory, ExprConst), String> {
         for expr in exprs {
             if !matches!(self.expr_type(expr)?, RefType::Int) {
                 return Err(format!("{expr:?} 不是整型表达式"));

@@ -1,13 +1,13 @@
-pub type TranslationUnit = Vec<Definition>;
 use super::ty::Type;
 
+pub type TranslationUnit = Vec<Definition>;
 pub type Definition = (Type, String, Option<Init>);
 
 /// # 初始化器
-/// - `Function(Vec<String>, Block)` 是二元组，前者为每个形参的重整化后名字，后者为函数体.
-/// - `Expr(Expr)`，表示这个变量使用一个表达式初始化，即这是一个整型变量.
-/// - `Const(i32)`，表示这个变量使用一个整型常量初始化，即这是一个整型常量.
-/// - `ConstInitList` 和 `InitList` 同理.
+/// - [`Init::Function`] 是二元组，前者为每个形参的重整化后名字，后者为函数体.
+/// - [`Init::Expr`]，表示这个变量使用一个表达式初始化，即这是一个整型变量.
+/// - [`Init::Const`]，表示这个变量使用一个整型常量初始化，即这是一个整型常量.
+/// - [`Init::ConstInitList`] 和 [`Init::InitList`] 同理.
 #[derive(Debug)]
 pub enum Init {
     Function(Vec<String>, Block),
