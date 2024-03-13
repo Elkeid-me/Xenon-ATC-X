@@ -1,3 +1,5 @@
+use crate::risk;
+
 use super::ast::{Expr::*, ExprConst::*, *};
 use super::ty::*;
 use pest::pratt_parser::Assoc::{Left, Right};
@@ -122,6 +124,45 @@ pub struct ASTBuilder {
     pub symbol_table: SymbolTable,
 }
 
+trait InitListTrait {
+    fn new_list(l: Vec<Self>) -> Self
+    where
+        Self: Sized;
+    fn new_item(expr: Expr) -> Result<Self, String>
+    where
+        Self: Sized;
+    fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self>
+    where
+        Self: Sized;
+}
+
+impl InitListTrait for ConstInitListItem {
+    fn new_list(l: Vec<Self>) -> Self {
+        Self::ConstInitList(Box::new(l))
+    }
+    fn new_item(expr: Expr) -> Result<Self, String> {
+        match expr {
+            Num(i) => Ok(Self::Num(i)),
+            _ => Err(format!("{expr:?} 不是整型常量表达式")),
+        }
+    }
+    fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self> {
+        risk!(v.last_mut().unwrap(), Self::ConstInitList(l) => l.as_mut())
+    }
+}
+
+impl InitListTrait for InitListItem {
+    fn new_list(l: Vec<Self>) -> Self {
+        Self::InitList(Box::new(l))
+    }
+    fn new_item(expr: Expr) -> Result<Self, String> {
+        Ok(Self::Expr(expr))
+    }
+    fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self> {
+        risk!(v.last_mut().unwrap(), Self::InitList(l) => l.as_mut())
+    }
+}
+
 impl ASTBuilder {
     pub(in super::parser) fn new() -> Self {
         let expr_parser = PrattParser::new()
@@ -139,7 +180,7 @@ impl ASTBuilder {
             .op(Op::infix(Rule::logic_or, Left))
             .op(Op::infix(Rule::logic_and, Left))
             .op(Op::infix(Rule::xor, Left))
-            .op(Op::infix(Rule::xor, Left))
+            .op(Op::infix(Rule::or, Left))
             .op(Op::infix(Rule::and, Left))
             .op(Op::infix(Rule::eq, Left) | Op::infix(Rule::neq, Left))
             .op(Op::infix(Rule::grt, Left) | Op::infix(Rule::geq, Left) | Op::infix(Rule::les, Left) | Op::infix(Rule::leq, Left))
@@ -221,6 +262,94 @@ impl ASTBuilder {
         }
     }
 
+    fn parse_init_list_item(&self, pair: Pair<Rule>) -> Result<InitListItem, String> {
+        match pair.as_rule() {
+            Rule::initializer_list => Ok(InitListItem::InitList(Box::new(self.parse_init_list(pair)?))),
+            Rule::expression => match self.process_expr_impl(pair)? {
+                (expr, RefType::Int, _) => Ok(InitListItem::Expr(expr)),
+                (expr, _, _) => Err(format!("{expr:?} 不是整型表达式")),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    fn parse_init_list(&self, pair: Pair<Rule>) -> Result<InitList, String> {
+        pair.into_inner().map(|pair| self.parse_init_list_item(pair)).collect()
+    }
+
+    fn __impl<T>(&self, init_list: InitList, len_prod: &[usize]) -> Result<(Vec<T>, usize), String>
+    where
+        T: InitListTrait,
+    {
+        if init_list.is_empty() {
+            return Ok((Vec::new(), *len_prod.last().unwrap()));
+        }
+        let mut v = Vec::new();
+        let mut sum = 0usize;
+        for ele in init_list {
+            match ele {
+                InitListItem::InitList(l) => {
+                    if len_prod.len() == 1 || sum % len_prod[0] != 0 {
+                        return Err(format!("{:?} 不能是初始化列表", l));
+                    }
+                    //   对于 `int lint[1][14][51][4]`，我们计算一个列表：`L = {4, 204, 2856, 2856}`，这个数组给出了每一层的大小.
+                    //                                                      ^   ^    ^     ^
+                    //                                                      |   |    |     |
+                    //                                                      0   1    2     3
+                    //   rev_depth 给出了列表中第一个不能被 sum 整除的元素的下标.
+                    //   rev_depth == 0 -> 错误，即当前已经填充完毕的元素的个数不能被 L[0] 整除
+                    //   rev_depth == 1 -> init_list 对应最内层的列表. 譬如 int array[4][3][2]，init_list 对应 int[2].
+                    // 而此时需要寻位到 `v` 的第 2 层（以最外层为 1 层），然后 push.
+                    //   换句话说，寻位的次数是 l.len() - rev_depth.
+                    //   若 sum == 0，则 position 返回 None. unwrap 为 0.
+
+                    //   对于 `int lint[1][14][51][4]`，rev_depth == 3 时，意味着 init_list 对应 int[14][51][4]
+                    // 需要寻位 0 次
+                    let rev_depth = len_prod.iter().position(|prod| sum % prod != 0).unwrap_or(len_prod.len() - 1);
+                    let depth = len_prod.len() - rev_depth - 1;
+                    let (l, s) = self.__impl(*l, &len_prod[0..rev_depth])?;
+                    let v_ref = (0..depth).fold(&mut v, |state, _| {
+                        if state.is_empty() {
+                            state.push(T::new_list(Vec::new()));
+                        }
+                        T::get_last(state)
+                    });
+                    v_ref.push(T::new_list(l));
+                    sum += s;
+                }
+                InitListItem::Expr(expr) => {
+                    let v_ref = len_prod.iter().rev().skip(1).fold(&mut v, |state, i| {
+                        if state.is_empty() || sum % i == 0 {
+                            state.push(T::new_list(Vec::new()));
+                        }
+                        T::get_last(state)
+                    });
+                    v_ref.push(T::new_item(expr)?);
+                    sum += 1;
+                }
+            }
+            if sum > *len_prod.last().unwrap() {
+                return Err("初始化列表过长".to_string());
+            }
+        }
+        Ok((v, *len_prod.last().unwrap()))
+    }
+
+    fn process_init_list<T>(&self, init_list: InitList, lengths: &[usize]) -> Result<Vec<T>, String>
+    where
+        T: InitListTrait,
+    {
+        let len_prod: Vec<usize> = lengths
+            .iter()
+            .rev()
+            .scan(1, |l, &r| {
+                *l = *l * r;
+                Some(*l)
+            })
+            .collect();
+        Ok(self.__impl::<T>(init_list, &len_prod)?.0)
+    }
+
     fn parse_definition(&mut self, pair: Pair<Rule>) -> Result<Definition, String> {
         match pair.as_rule() {
             Rule::const_variable_definition => {
@@ -229,7 +358,7 @@ impl ASTBuilder {
                 match self.process_expr_impl(iter.next().unwrap())? {
                     (Num(i), _, ConstEval) => {
                         let new_id = self.symbol_table.insert_definition(id, Type::Int, Some(ConstInit::Num(i)))?;
-                        Ok((Type::Int, new_id, Some(Init::Num(i))))
+                        Ok((Type::Int, new_id, Some(Init::Const(i))))
                     }
                     (e, _, _) => Err(format!("{e:?} 不是整型常量表达式")),
                 }
@@ -254,17 +383,32 @@ impl ASTBuilder {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
                 let len = self.iter_to_vec(iter.next())?;
-                let init_list = Vec::new();
-                let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
+                let tmp_init_list = self.parse_init_list(iter.next().unwrap())?;
+                let init_list = self.process_init_list(tmp_init_list, len.as_slice())?;
+                let mangled_id = self.symbol_table.insert_definition(
+                    id,
+                    Type::IntArray(len.clone()),
+                    Some(ConstInit::List(init_list.clone())),
+                )?;
                 Ok((Type::IntArray(len), mangled_id, Some(Init::ConstInitList(init_list))))
             }
+
             Rule::array_definition => {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
                 let len = self.iter_to_vec(iter.next())?;
-                let init_list = Vec::new();
-                let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
-                Ok((Type::IntArray(len), mangled_id, Some(Init::InitList(init_list))))
+                match iter.next() {
+                    Some(i) => {
+                        let tmp_init_list = self.parse_init_list(i)?;
+                        let init_list = self.process_init_list(tmp_init_list, len.as_slice())?;
+                        let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
+                        Ok((Type::IntArray(len), mangled_id, Some(Init::InitList(init_list))))
+                    }
+                    None => {
+                        let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
+                        Ok((Type::IntArray(len), mangled_id, Some(Init::InitList(Vec::new()))))
+                    }
+                }
             }
             _ => unreachable!(),
         }

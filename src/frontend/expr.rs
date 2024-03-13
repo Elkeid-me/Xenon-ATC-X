@@ -1,3 +1,5 @@
+use crate::risk;
+
 use super::ast::{Expr::*, ExprCategory::*, ExprConst::*, *};
 use super::parser::{ASTBuilder, ConstInit, Rule, Scope, Symbol};
 use super::ty::*;
@@ -85,8 +87,8 @@ impl ASTBuilder {
                 return Err(format!("{expr:?} 不是整型表达式"));
             }
         }
-        match exprs.len().cmp(&(len.len() + 1)) {
-            std::cmp::Ordering::Less => Ok((RefType::IntPointer(&len[exprs.len() - 1..]), RValue, NonConst)),
+        match (exprs.len() - 1).cmp(&len.len()) {
+            std::cmp::Ordering::Less => Ok((RefType::IntPointer(&len[exprs.len()..]), RValue, NonConst)),
             std::cmp::Ordering::Equal => Ok((RefType::Int, LValue, NonConst)),
             std::cmp::Ordering::Greater => Err(format!("下标运算符不能应用于整型对象")),
         }
@@ -239,17 +241,32 @@ impl ASTBuilder {
             },
             Sub(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a - b), true, false),
+                ((l, _, _), (r, _, _)) if l == r => (Num(0), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Sub(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Mul(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a * b), true, false),
+                ((Num(0), _, _), (_, _, false)) | ((_, _, false), (Num(0), _, _)) => (Num(0), true, false),
+                ((Num(1), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(1), _, _)) => (r, true, r_se),
+                ((Num(-1), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(-1), _, _)) => (Nega(Box::new(r)), true, r_se),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Mul(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Div(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                (_, (Num(0), _, _)) => {
+                    println!("表达式中出现除零");
+                    (Num(2147483647), true, false)
+                }
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a / b), true, false),
+                ((Num(0), _, _), (_, _, false)) => (Num(0), true, false),
+                ((r, _, r_se), (Num(1), _, _)) => (r, true, r_se),
+                ((r, _, r_se), (Num(-1), _, _)) => (Nega(Box::new(r)), true, r_se),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Div(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Mod(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                (_, (Num(0), _, _)) => {
+                    println!("表达式中出现除零");
+                    (Num(2147483647), true, false)
+                }
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a % b), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Mod(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
@@ -263,22 +280,32 @@ impl ASTBuilder {
             },
             Xor(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a ^ b), true, false),
+                ((Num(0), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(0), _, _)) => (r, true, r_se),
+                ((l, _, _), (r, _, _)) if l == r => (Num(0), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Xor(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             And(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a & b), true, false),
+                ((Num(0), _, _), (_, _, false)) | ((_, _, false), (Num(0), _, _)) => (Num(0), true, false),
+                ((Num(1), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(1), _, _)) => (r, true, r_se),
+                ((l, _, _), (r, _, _)) if l == r => (l, true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (And(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Or(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a | b), true, false),
+                ((Num(0), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(0), _, _)) => (r, true, r_se),
+                ((Num(1), _, _), (_, _, false)) | ((_, _, false), (Num(1), _, _)) => (Num(1), true, false),
+                ((l, _, _), (r, _, _)) if l == r => (l, true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Or(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Eq(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num((a == b) as i32), true, false),
+                ((l, _, _), (r, _, _)) if l == r => (Num(1), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Eq(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Neq(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num((a != b) as i32), true, false),
+                ((l, _, _), (r, _, _)) if l == r => (Num(0), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Neq(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Grt(l, r) => match (self.simplify(*l), self.simplify(*r)) {
@@ -299,10 +326,14 @@ impl ASTBuilder {
             },
             LogicAnd(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num((a != 0 && b != 0) as i32), true, false),
+                ((Num(0), _, _), (_, _, false)) => (Num(0), true, false),
+                ((Num(a), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(a), _, _)) if a != 0 => (r, true, r_se),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (LogicAnd(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             LogicOr(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num((a != 0 || b != 0) as i32), true, false),
+                ((Num(0), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(0), _, _)) => (r, true, r_se),
+                ((Num(a), _, _), (_, _, false)) if a != 0 => (Num(1), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (LogicOr(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             LogicNot(expr) => match self.simplify(*expr) {
@@ -312,6 +343,7 @@ impl ASTBuilder {
             Nega(expr) => match self.simplify(*expr) {
                 (Num(a), _, _) => (Num(-a), true, false),
                 (Nega(e), _, e_se) => (*e, true, e_se),
+                (Sub(l, r), _, e_se) => (Sub(r, l), true, e_se),
                 (e, e_s, e_se) => (Nega(Box::new(e)), e_s, e_se),
             },
             Not(expr) => match self.simplify(*expr) {
@@ -358,13 +390,43 @@ impl ASTBuilder {
                 ((l, l_s, _), (r, r_s, _)) => (SaRAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
             },
             Func(id, args) => {
-                let args_simplified = args.into_iter().map(|expr| self.simplify(expr).0).collect();
-                (Func(id, args_simplified), false, true)
+                let (args_simplified, s) = args.into_iter().fold((Vec::new(), false), |(mut v, mut s), expr| {
+                    let (e, _s, _) = self.simplify(expr);
+                    v.push(e);
+                    s = s || _s;
+                    (v, s)
+                });
+                (Func(id, args_simplified), s, true)
             }
-            Array(id, exprs) => {
-                let mangled_name = self.symbol_table.search(&id).unwrap().1.clone();
-                let exprs_simplified = exprs.into_iter().map(|expr| self.simplify(expr).0).collect();
-                (Array(mangled_name, exprs_simplified), false, true)
+            Array(id, subscripts) => {
+                let Symbol(_, mangled_name, init) = self.symbol_table.search(&id).unwrap();
+                let (subscripts_simplified, s, se) =
+                    subscripts.into_iter().fold((Vec::new(), false, false), |(mut v, mut s, mut se), expr| {
+                        let (e, _s, _se) = self.simplify(expr);
+                        v.push(e);
+                        s = s || _s;
+                        se = se || _se;
+                        (v, s, se)
+                    });
+                match (subscripts_simplified.iter().all(|expr| matches!(expr, Num(_))), init) {
+                    (true, Some(ConstInit::List(l))) => {
+                        let mut r_ref = l;
+                        for expr in subscripts_simplified.iter().take(subscripts_simplified.len() - 1) {
+                            let i = expr.get_num() as usize;
+                            if i >= r_ref.len() {
+                                return (Num(0), true, false);
+                            }
+                            r_ref = risk!(&r_ref[i], ConstInitListItem::ConstInitList(l) => l);
+                        }
+                        let i = subscripts_simplified.last().unwrap().get_num() as usize;
+                        if i >= r_ref.len() {
+                            (Num(0), true, false)
+                        } else {
+                            (Num(risk!(r_ref[i], ConstInitListItem::Num(i) => i)), true, false)
+                        }
+                    }
+                    _ => (Array(mangled_name.clone(), subscripts_simplified), s, se),
+                }
             }
         }
     }
@@ -379,5 +441,36 @@ impl ASTBuilder {
     pub fn process_expr(&self, expr: Pair<Rule>) -> Result<Expr, String> {
         let (expr, _, _) = self.process_expr_impl(expr)?;
         Ok(expr)
+    }
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Mul(l0, l1), Mul(r0, r1)) => (l0 == r0 && l1 == r1) || (l0 == r1 && l1 == r0),
+            (Div(l0, l1), Div(r0, r1)) => l0 == r0 && l1 == r1,
+            (Mod(l0, l1), Mod(r0, r1)) => l0 == r0 && l1 == r1,
+            (Add(l0, l1), Add(r0, r1)) => (l0 == r0 && l1 == r1) || (l0 == r1 && l1 == r0),
+            (Sub(l0, l1), Sub(r0, r1)) => l0 == r0 && l1 == r1,
+            (ShL(l0, l1), ShL(r0, r1)) => l0 == r0 && l1 == r1,
+            (ShR(l0, l1), ShR(r0, r1)) => l0 == r0 && l1 == r1,
+            (Xor(l0, l1), Xor(r0, r1)) => (l0 == r0 && l1 == r1) || (l0 == r1 && l1 == r0),
+            (And(l0, l1), And(r0, r1)) => (l0 == r0 && l1 == r1) || (l0 == r1 && l1 == r0),
+            (Or(l0, l1), Or(r0, r1)) => (l0 == r0 && l1 == r1) || (l0 == r1 && l1 == r0),
+            (Eq(l0, l1), Eq(r0, r1)) => (l0 == r0 && l1 == r1) || (l0 == r1 && l1 == r0),
+            (Neq(l0, l1), Neq(r0, r1)) => (l0 == r0 && l1 == r1) || (l0 == r1 && l1 == r0),
+            (Grt(l0, l1), Grt(r0, r1)) => l0 == r0 && l1 == r1,
+            (Geq(l0, l1), Geq(r0, r1)) => l0 == r0 && l1 == r1,
+            (Les(l0, l1), Les(r0, r1)) => l0 == r0 && l1 == r1,
+            (Leq(l0, l1), Leq(r0, r1)) => l0 == r0 && l1 == r1,
+            (LogicAnd(l0, l1), LogicAnd(r0, r1)) => l0 == r0 && l1 == r1,
+            (LogicOr(l0, l1), LogicOr(r0, r1)) => l0 == r0 && l1 == r1,
+            (LogicNot(l0), LogicNot(r0)) => l0 == r0,
+            (Nega(l0), Nega(r0)) => l0 == r0,
+            (Not(l0), Not(r0)) => l0 == r0,
+            (Num(l0), Num(r0)) => l0 == r0,
+            (Var(l0), Var(r0)) => l0 == r0,
+            _ => false,
+        }
     }
 }

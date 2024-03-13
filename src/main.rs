@@ -5,6 +5,17 @@ mod arg_parse;
 mod frontend;
 mod preprocessor;
 
+/// 每个人承担自己的风险！
+#[macro_export]
+macro_rules! risk {
+    ($expression:expr, $pattern:pat => $extracted_expression:expr) => {
+        match $expression {
+            $pattern => $extracted_expression,
+            _ => unreachable!(),
+        }
+    };
+}
+
 fn compile() -> Result<(), Box<dyn std::error::Error>> {
     let (mode, input, output) = arg_parse::parse(std::env::args())?;
     let code = preprocessor::preprocess(&read_to_string(input)?.replace("\r\n", "\n"));
