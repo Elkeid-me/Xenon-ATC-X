@@ -1,4 +1,4 @@
-use std::io::Empty;
+use std::iter::repeat;
 
 use super::ast::{Expr::*, *};
 use super::ty::Type;
@@ -15,12 +15,14 @@ impl Counter {
 
 struct Generator {
     counter: Counter,
+    global_const_init: Vec<String>,
 }
 
 impl Generator {
     fn new() -> Self {
         Self {
             counter: Counter { value: 0 },
+            global_const_init: Vec::new(),
         }
     }
     fn generate(&mut self, ast: TranslationUnit) -> String {
@@ -31,7 +33,8 @@ decl @putint(i32): i32
 decl @putch(i32): i32
 decl @putarray(i32, *i32): i32
 decl @starttime(): i32
-decl @stoptime(): i32";
+decl @stoptime(): i32
+";
         let ir: String = ast.into_iter().map(|global_item| self.global_def(global_item)).collect();
         let ir = ir.split('\n').filter(|s| !s.is_empty());
         let mut v = Vec::new();
@@ -63,7 +66,7 @@ decl @stoptime(): i32";
         for i in 0..v_2.len() - 1 {
             if !(v_2[i].starts_with("    jump") || v_2[i].starts_with("    ret") || v_2[i].starts_with("    br"))
                 && !v_2[i].ends_with("{\n")
-                && (v_2[i + 1].ends_with("}\n") || v_2[i + 1].ends_with(":\n"))
+                && (v_2[i + 1] == "}\n" || v_2[i + 1].ends_with(":\n"))
             {
                 v_3.push(&v_2[i]);
                 v_3.push("    ret\n");
@@ -73,7 +76,8 @@ decl @stoptime(): i32";
         }
         v_3.push(v_2.last().unwrap());
         let ir: String = v_3.into_iter().collect();
-        format!("{}\n{}", prelude, ir)
+        let global: String = self.global_const_init.iter().map(|str| str.as_str()).collect();
+        format!("{prelude}{global}{ir}")
     }
     fn array_elem_lvalue(id: String, subscripts: Vec<Expr>) -> (String, String) {
         todo!()
@@ -437,20 +441,74 @@ decl @stoptime(): i32";
 "
                 )
             }
+            (Type::IntArray(len), id, Some(Init::ConstInitList(list))) => {
+                let init_str = Self::const_init_list_to_str(&len, list);
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                self.global_const_init.push(format!("global %{id}: {ty_str}, {init_str}\n"));
+                String::new()
+            }
             _ => unimplemented!(),
         }
+    }
+    fn generate_empty_list(len: &[usize]) -> String {
+        match len.len() {
+            0 => "0".to_string(),
+            _ => {
+                let content =
+                    repeat(Self::generate_empty_list(&len[1..])).take(len[0]).reduce(|l, r| format!("{l}, {r}")).unwrap_or_default();
+                format!("{{{content}}}")
+            }
+        }
+    }
+    fn init_list_to_str(len: &[usize], list: InitList) -> String {
+        let empty_list = Self::generate_empty_list(&len[1..]);
+        let empty_list_n = len[0] - list.len();
+        let content = list
+            .into_iter()
+            .map(|item| match item {
+                InitListItem::InitList(l) => Self::init_list_to_str(&len[1..], *l),
+                InitListItem::Expr(e) => e.get_num().to_string(),
+            })
+            .chain(repeat(empty_list).take(empty_list_n))
+            .reduce(|l, r| format!("{l}, {r}"))
+            .unwrap_or_default();
+        format!("{{{content}}}")
+    }
+    fn const_init_list_to_str(len: &[usize], list: ConstInitList) -> String {
+        let empty_list = Self::generate_empty_list(&len[1..]);
+        let empty_list_n = len[0] - list.len();
+        let content = list
+            .into_iter()
+            .map(|item| match item {
+                ConstInitListItem::ConstInitList(l) => Self::const_init_list_to_str(&len[1..], *l),
+                ConstInitListItem::Num(i) => i.to_string(),
+            })
+            .chain(repeat(empty_list).take(empty_list_n))
+            .reduce(|l, r| format!("{l}, {r}"))
+            .unwrap_or_default();
+        format!("{{{content}}}")
     }
     fn global_def(&mut self, def: Definition) -> String {
         match def {
             (Type::Function(ret_type, para_type), id, Some(Init::Function(para_id, block))) => {
                 self.fun_def(id, *ret_type, para_type, para_id, block)
             }
-            (Type::Int, id, None) => format!("global    %{id} = alloc i32, 0\n"),
+            (Type::Int, id, None) => format!("global %{id} = alloc i32, 0\n"),
             (Type::Int, id, Some(Init::Expr(expr))) => {
                 let (expr_eval, expr_id) = self.expr_rvalue(expr);
                 format!("{expr_eval}global %{id} = alloc i32, {expr_id}\n")
             }
             (Type::Int, _, Some(Init::Const(_))) => String::new(),
+            (Type::IntArray(len), id, Some(Init::InitList(list))) => {
+                let init_str = Self::init_list_to_str(&len, list);
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                format!("global %{id}: {ty_str}, {init_str}\n")
+            }
+            (Type::IntArray(len), id, Some(Init::ConstInitList(list))) => {
+                let init_str = Self::const_init_list_to_str(&len, list);
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                format!("global %{id}: {ty_str}, {init_str}\n")
+            }
             _ => unimplemented!(),
         }
     }
