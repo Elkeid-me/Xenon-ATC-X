@@ -38,7 +38,7 @@ pub trait Scope {
     fn name_mangling(&self, id: String, ty: &Type) -> (String, usize);
 }
 
-fn demangling<'a>(mut id: &'a str) -> &'a str {
+fn demangling(mut id: &str) -> &str {
     if id.len() < 2 {
         return id;
     }
@@ -128,7 +128,7 @@ trait InitListTrait {
     fn new_list(l: Vec<Self>) -> Self
     where
         Self: Sized;
-    fn new_item(expr: Expr) -> Result<Self, String>
+    fn new_item(ast_builder: &ASTBuilder, expr: Pair<Rule>) -> Result<Self, String>
     where
         Self: Sized;
     fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self>
@@ -140,10 +140,10 @@ impl InitListTrait for ConstInitListItem {
     fn new_list(l: Vec<Self>) -> Self {
         Self::ConstInitList(Box::new(l))
     }
-    fn new_item(expr: Expr) -> Result<Self, String> {
-        match expr {
+    fn new_item(ast_builder: &ASTBuilder, expr: Pair<Rule>) -> Result<Self, String> {
+        match ast_builder.process_expr(expr)? {
             Num(i) => Ok(Self::Num(i)),
-            _ => Err(format!("{expr:?} 不是整型常量表达式")),
+            expr => Err(format!("{expr:?} 不是整型常量表达式")),
         }
     }
     fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self> {
@@ -155,8 +155,11 @@ impl InitListTrait for InitListItem {
     fn new_list(l: Vec<Self>) -> Self {
         Self::InitList(Box::new(l))
     }
-    fn new_item(expr: Expr) -> Result<Self, String> {
-        Ok(Self::Expr(expr))
+    fn new_item(ast_builder: &ASTBuilder, expr: Pair<Rule>) -> Result<Self, String> {
+        match ast_builder.process_expr_impl(expr)? {
+            (expr, RefType::Int, _) => Ok(Self::Expr(expr)),
+            (expr, _, _) => Err(format!("{expr:?} 不是整型表达式")),
+        }
     }
     fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self> {
         risk!(v.last_mut().unwrap(), Self::InitList(l) => l.as_mut())
@@ -262,35 +265,17 @@ impl ASTBuilder {
         }
     }
 
-    fn parse_init_list_item(&self, pair: Pair<Rule>) -> Result<InitListItem, String> {
-        match pair.as_rule() {
-            Rule::initializer_list => Ok(InitListItem::InitList(Box::new(self.parse_init_list(pair)?))),
-            Rule::expression => match self.process_expr_impl(pair)? {
-                (expr, RefType::Int, _) => Ok(InitListItem::Expr(expr)),
-                (expr, _, _) => Err(format!("{expr:?} 不是整型表达式")),
-            },
-            _ => unreachable!(),
-        }
-    }
-
-    fn parse_init_list(&self, pair: Pair<Rule>) -> Result<InitList, String> {
-        pair.into_inner().map(|pair| self.parse_init_list_item(pair)).collect()
-    }
-
-    fn __impl<T>(&self, init_list: InitList, len_prod: &[usize]) -> Result<(Vec<T>, usize), String>
+    fn __impl<T>(&self, init_list: Pair<Rule>, len_prod: &[usize]) -> Result<(Vec<T>, usize), String>
     where
         T: InitListTrait,
     {
-        if init_list.is_empty() {
-            return Ok((Vec::new(), *len_prod.last().unwrap()));
-        }
         let mut v = Vec::new();
         let mut sum = 0usize;
-        for ele in init_list {
-            match ele {
-                InitListItem::InitList(l) => {
+        for ele in init_list.into_inner() {
+            match ele.as_rule() {
+                Rule::initializer_list => {
                     if len_prod.len() == 1 || sum % len_prod[0] != 0 {
-                        return Err(format!("{:?} 不能是初始化列表", l));
+                        return Err(format!("{:?} 不能是初始化列表", ele));
                     }
                     //   对于 `int lint[1][14][51][4]`，我们计算一个列表：`L = {4, 204, 2856, 2856}`，这个数组给出了每一层的大小.
                     //                                                      ^   ^    ^     ^
@@ -307,7 +292,7 @@ impl ASTBuilder {
                     // 需要寻位 0 次
                     let rev_depth = len_prod.iter().position(|prod| sum % prod != 0).unwrap_or(len_prod.len() - 1);
                     let depth = len_prod.len() - rev_depth - 1;
-                    let (l, s) = self.__impl(*l, &len_prod[0..rev_depth])?;
+                    let (l, s) = self.__impl(ele, &len_prod[0..rev_depth])?;
                     let v_ref = (0..depth).fold(&mut v, |state, _| {
                         if state.is_empty() {
                             state.push(T::new_list(Vec::new()));
@@ -317,16 +302,17 @@ impl ASTBuilder {
                     v_ref.push(T::new_list(l));
                     sum += s;
                 }
-                InitListItem::Expr(expr) => {
+                Rule::expression => {
                     let v_ref = len_prod.iter().rev().skip(1).fold(&mut v, |state, i| {
                         if state.is_empty() || sum % i == 0 {
                             state.push(T::new_list(Vec::new()));
                         }
                         T::get_last(state)
                     });
-                    v_ref.push(T::new_item(expr)?);
+                    v_ref.push(T::new_item(self, ele)?);
                     sum += 1;
                 }
+                _ => unreachable!(),
             }
             if sum > *len_prod.last().unwrap() {
                 return Err("初始化列表过长".to_string());
@@ -335,7 +321,7 @@ impl ASTBuilder {
         Ok((v, *len_prod.last().unwrap()))
     }
 
-    fn process_init_list<T>(&self, init_list: InitList, lengths: &[usize]) -> Result<Vec<T>, String>
+    fn process_init_list<T>(&self, init_list: Pair<Rule>, lengths: &[usize]) -> Result<Vec<T>, String>
     where
         T: InitListTrait,
     {
@@ -360,7 +346,7 @@ impl ASTBuilder {
                         let new_id = self.symbol_table.insert_definition(id, Type::Int, Some(ConstInit::Num(i)))?;
                         Ok((Type::Int, new_id, Some(Init::Const(i))))
                     }
-                    (e, _, _) => Err(format!("{e:?} 不是整型常量表达式")),
+                    (expr, _, _) => Err(format!("{expr:?} 不是整型常量表达式")),
                 }
             }
             Rule::variable_definition => {
@@ -383,8 +369,7 @@ impl ASTBuilder {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
                 let len = self.iter_to_vec(iter.next())?;
-                let tmp_init_list = self.parse_init_list(iter.next().unwrap())?;
-                let init_list = self.process_init_list(tmp_init_list, len.as_slice())?;
+                let init_list = self.process_init_list(iter.next().unwrap(), &len)?;
                 let mangled_id = self.symbol_table.insert_definition(
                     id,
                     Type::IntArray(len.clone()),
@@ -399,8 +384,7 @@ impl ASTBuilder {
                 let len = self.iter_to_vec(iter.next())?;
                 match iter.next() {
                     Some(i) => {
-                        let tmp_init_list = self.parse_init_list(i)?;
-                        let init_list = self.process_init_list(tmp_init_list, len.as_slice())?;
+                        let init_list = self.process_init_list(i, &len)?;
                         let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
                         Ok((Type::IntArray(len), mangled_id, Some(Init::InitList(init_list))))
                     }
@@ -486,6 +470,14 @@ impl ASTBuilder {
         let block = block
             .into_inner()
             .filter(|pair| !matches!(pair.as_rule(), Rule::int_keyword | Rule::const_keyword))
+            .scan(true, |s, ele| {
+                if *s {
+                    *s = !matches!(ele.as_rule(), Rule::return_statement | Rule::break_keyword | Rule::continue_keyword);
+                    Some(ele)
+                } else {
+                    None
+                }
+            })
             .map(|pair| match pair.as_rule() {
                 Rule::block => Ok(BlockItem::Block(self.parse_block(pair, in_while, ret_type)?)),
                 Rule::expression
@@ -574,7 +566,7 @@ impl ASTBuilder {
             {
                 Ok(ast)
             }
-            _ => Err("没有 main 函数，或 main 函数不符合要求".to_string()),
+            _ => Err("没有 main 函数，或 main 函数不是 () -> int".to_string()),
         }
     }
 }
