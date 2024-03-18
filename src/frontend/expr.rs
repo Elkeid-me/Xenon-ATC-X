@@ -56,6 +56,8 @@ impl ASTBuilder {
                 Rule::add_assign => AddAssign(Box::new(l), Box::new(r)),
                 Rule::sub_assign => SubAssign(Box::new(l), Box::new(r)),
                 Rule::mul_assign => MulAssign(Box::new(l), Box::new(r)),
+                Rule::div_assign => DivAssign(Box::new(l), Box::new(r)),
+                Rule::mod_assign => ModAssign(Box::new(l), Box::new(r)),
                 Rule::and_assign => AndAssign(Box::new(l), Box::new(r)),
                 Rule::or_assign => OrAssign(Box::new(l), Box::new(r)),
                 Rule::xor_assign => XorAssign(Box::new(l), Box::new(r)),
@@ -144,7 +146,9 @@ impl ASTBuilder {
             | OrAssign(l, r)
             | XorAssign(l, r)
             | ShLAssign(l, r)
-            | SaRAssign(l, r) => match (self.expr_check(l)?, self.expr_check(r)?) {
+            | SaRAssign(l, r)
+            | DivAssign(l, r)
+            | ModAssign(l, r) => match (self.expr_check(l)?, self.expr_check(r)?) {
                 ((RefType::Int, LValue, _), (RefType::Int, _, _)) => Ok((RefType::Int, LValue, NonConst)),
                 _ => Err(format!("{l:?} 或 {r:?} 不是整型表达式, 或 {l:?} 不是左值表达式")),
             },
@@ -374,6 +378,12 @@ impl ASTBuilder {
             },
             MulAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((l, l_s, _), (r, r_s, _)) => (MulAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            DivAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (DivAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
+            },
+            ModAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
+                ((l, l_s, _), (r, r_s, _)) => (ModAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
             },
             AndAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((l, l_s, _), (r, r_s, _)) => (AndAssign(Box::new(l), Box::new(r)), l_s || r_s, true),

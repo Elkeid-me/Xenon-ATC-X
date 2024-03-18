@@ -141,10 +141,7 @@ impl Generator {
             | Leq(l, r) => format!("{}{}", self.expr_xvalue(*l), self.expr_xvalue(*r)),
             logic if matches!(logic, LogicAnd(_, _) | LogicOr(_, _)) => self.expr_rvalue(logic).0,
             LogicNot(expr) | Nega(expr) | Not(expr) => self.expr_xvalue(*expr),
-            PostInc(_) => todo!(),
-            PostDec(_) => todo!(),
-            PreInc(_) => todo!(),
-            PreDec(_) => todo!(),
+            inc_dec if matches!(inc_dec, PostInc(_) | PostDec(_) | PreInc(_) | PreDec(_)) => self.expr_rvalue(inc_dec).0,
             Func(id, args) => {
                 let (arg_str, arg_ids) = args
                     .into_iter()
@@ -160,108 +157,69 @@ impl Generator {
     }
     fn expr_lvalue(&mut self, expr: Expr) -> (String, String) {
         match expr {
-            PostInc(_) => todo!(),
-            PostDec(_) => todo!(),
-            PreInc(_) => todo!(),
-            PreDec(_) => todo!(),
-            Assignment(_, _) => todo!(),
-            AddAssign(_, _) => todo!(),
-            SubAssign(_, _) => todo!(),
-            MulAssign(_, _) => todo!(),
-            AndAssign(_, _) => todo!(),
-            OrAssign(_, _) => todo!(),
-            XorAssign(_, _) => todo!(),
-            ShLAssign(_, _) => todo!(),
-            SaRAssign(_, _) => todo!(),
+            PreInc(expr) => {
+                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
+                let tmp_id_1 = self.counter.get();
+                let tmp_id_2 = self.counter.get();
+                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = add {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), expr_id)
+            }
+            PreDec(expr) => {
+                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
+                let tmp_id_1 = self.counter.get();
+                let tmp_id_2 = self.counter.get();
+                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = sub {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), expr_id)
+            }
+            Assignment(l, r) => {
+                let (r_eval, r_id) = self.expr_rvalue(*r);
+                let (l_eval, l_id) = self.expr_lvalue(*l);
+                (format!("{r_eval}{l_eval}    store {r_id}, {l_id}\n"), l_id)
+            }
+            AddAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
+            SubAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
+            MulAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
+            AndAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
+            OrAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
+            XorAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
+            ShLAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
+            SaRAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
             Var(x) => (String::new(), format!("%{x}")),
             Array(id, subscripts, _) => self.array_elem_lvalue(id, subscripts),
             _ => unreachable!(),
         }
     }
-    fn expr_rvalue(&mut self, expr: Expr) -> (String, String) {
+    fn assign_expr_helper(&mut self, l: Expr, r: Expr, op: &str, rvalue: bool) -> (String, String) {
+        let (r_eval, r_id) = self.expr_rvalue(r);
+        let (l_eval, l_id) = self.expr_lvalue(l);
+        let tmp_id_1 = self.counter.get();
+        let tmp_id_2 = self.counter.get();
+        (format!("{r_eval}{l_eval}    {tmp_id_1} = load {l_id}\n    {tmp_id_2} = {op} {tmp_id_1}, {r_id}\n   store {tmp_id_2}, {l_id}\n"), if rvalue { tmp_id_2 } else { l_id })
+    }
+    fn arith_expr_helper(&mut self, l: Expr, r: Expr, op: &str) -> (String, String) {
         let id = self.counter.get();
+        let (l_eval, l_id) = self.expr_rvalue(l);
+        let (r_eval, r_id) = self.expr_rvalue(r);
+        (format!("{l_eval}{r_eval}    {id} = {op} {l_id}, {r_id}\n"), id)
+    }
+    fn expr_rvalue(&mut self, expr: Expr) -> (String, String) {
         match expr {
-            Mul(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = mul {l_id}, {r_id}\n"), id)
-            }
-            Div(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = div {l_id}, {r_id}\n"), id)
-            }
-            Mod(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = mod {l_id}, {r_id}\n"), id)
-            }
-            Add(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = add {l_id}, {r_id}\n"), id)
-            }
-            Sub(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = sub {l_id}, {r_id}\n"), id)
-            }
-            ShL(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = shl {l_id}, {r_id}\n"), id)
-            }
-            ShR(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = asr {l_id}, {r_id}\n"), id)
-            }
-            Xor(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = xor {l_id}, {r_id}\n"), id)
-            }
-            And(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = and {l_id}, {r_id}\n"), id)
-            }
-            Or(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = or {l_id}, {r_id}\n"), id)
-            }
-            Eq(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = eq {l_id}, {r_id}\n"), id)
-            }
-            Neq(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = ne {l_id}, {r_id}\n"), id)
-            }
-            Grt(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = gt {l_id}, {r_id}\n"), id)
-            }
-            Geq(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = ge {l_id}, {r_id}\n"), id)
-            }
-            Les(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = lt {l_id}, {r_id}\n"), id)
-            }
-            Leq(l, r) => {
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                (format!("{l_eval}{r_eval}    {id} = le {l_id}, {r_id}\n"), id)
-            }
+            Mul(l, r) => self.arith_expr_helper(*l, *r, "mul"),
+            Div(l, r) => self.arith_expr_helper(*l, *r, "div"),
+            Mod(l, r) => self.arith_expr_helper(*l, *r, "mod"),
+            Add(l, r) => self.arith_expr_helper(*l, *r, "add"),
+            Sub(l, r) => self.arith_expr_helper(*l, *r, "sub"),
+            ShL(l, r) => self.arith_expr_helper(*l, *r, "shl"),
+            ShR(l, r) => self.arith_expr_helper(*l, *r, "shr"),
+            Xor(l, r) => self.arith_expr_helper(*l, *r, "xor"),
+            And(l, r) => self.arith_expr_helper(*l, *r, "and"),
+            Or(l, r) => self.arith_expr_helper(*l, *r, "or"),
+            Eq(l, r) => self.arith_expr_helper(*l, *r, "eq"),
+            Neq(l, r) => self.arith_expr_helper(*l, *r, "ne"),
+            Grt(l, r) => self.arith_expr_helper(*l, *r, "gt"),
+            Geq(l, r) => self.arith_expr_helper(*l, *r, "ge"),
+            Les(l, r) => self.arith_expr_helper(*l, *r, "lt"),
+            Leq(l, r) => self.arith_expr_helper(*l, *r, "le"),
             LogicAnd(l, r) => {
+                let id = self.counter.get();
                 let (l_eval, l_id) = self.expr_rvalue(*l);
                 let (r_eval, r_id) = self.expr_rvalue(*r);
                 let l_ne_0_id = self.counter.get();
@@ -292,6 +250,7 @@ impl Generator {
                 )
             }
             LogicOr(l, r) => {
+                let id = self.counter.get();
                 let (l_eval, l_id) = self.expr_rvalue(*l);
                 let (r_eval, r_id) = self.expr_rvalue(*r);
                 let l_ne_0_id = self.counter.get();
@@ -322,41 +281,69 @@ impl Generator {
                 )
             }
             LogicNot(expr) => {
+                let id = self.counter.get();
                 let (expr_eval, expr_id) = self.expr_rvalue(*expr);
                 (format!("{expr_eval}    {id} = eq 0, {expr_id}\n"), id)
             }
             Nega(expr) => {
+                let id = self.counter.get();
                 let (expr_eval, expr_id) = self.expr_rvalue(*expr);
                 (format!("{expr_eval}    {id} = sub 0, {expr_id}\n"), id)
             }
             Not(expr) => {
+                let id = self.counter.get();
                 let (expr_eval, expr_id) = self.expr_rvalue(*expr);
                 (format!("{expr_eval}    {id} = xor 1, {expr_id}\n"), id)
             }
-            PostInc(_) => todo!(),
-            PostDec(_) => todo!(),
-            PreInc(_) => todo!(),
-            PreDec(_) => todo!(),
+            PostInc(expr) => {
+                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
+                let tmp_id_1 = self.counter.get();
+                let tmp_id_2 = self.counter.get();
+                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = add {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_1)
+            }
+            PostDec(expr) => {
+                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
+                let tmp_id_1 = self.counter.get();
+                let tmp_id_2 = self.counter.get();
+                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = sub {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_1)
+            }
+            PreInc(expr) => {
+                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
+                let tmp_id_1 = self.counter.get();
+                let tmp_id_2 = self.counter.get();
+                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = add {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_2)
+            }
+            PreDec(expr) => {
+                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
+                let tmp_id_1 = self.counter.get();
+                let tmp_id_2 = self.counter.get();
+                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = sub {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_2)
+            }
             Assignment(l, r) => {
                 let (r_eval, r_id) = self.expr_rvalue(*r);
                 let (l_eval, l_id) = self.expr_lvalue(*l);
                 (format!("{r_eval}{l_eval}    store {r_id}, {l_id}\n"), r_id)
             }
-            AddAssign(_, _) => todo!(),
-            SubAssign(_, _) => todo!(),
-            MulAssign(_, _) => todo!(),
-            AndAssign(_, _) => todo!(),
-            OrAssign(_, _) => todo!(),
-            XorAssign(_, _) => todo!(),
-            ShLAssign(_, _) => todo!(),
-            SaRAssign(_, _) => todo!(),
+            AddAssign(l, r) => self.assign_expr_helper(*l, *r, "add", true),
+            SubAssign(l, r) => self.assign_expr_helper(*l, *r, "sub", true),
+            MulAssign(l, r) => self.assign_expr_helper(*l, *r, "mul", true),
+            DivAssign(l, r) => self.assign_expr_helper(*l, *r, "div", true),
+            ModAssign(l, r) => self.assign_expr_helper(*l, *r, "mod", true),
+            AndAssign(l, r) => self.assign_expr_helper(*l, *r, "and", true),
+            OrAssign(l, r) => self.assign_expr_helper(*l, *r, "or", true),
+            XorAssign(l, r) => self.assign_expr_helper(*l, *r, "xor", true),
+            ShLAssign(l, r) => self.assign_expr_helper(*l, *r, "shl", true),
+            SaRAssign(l, r) => self.assign_expr_helper(*l, *r, "sar", true),
             Num(i) => (String::new(), i.to_string()),
-            Var(x) => match &x[0..2] {
-                "_I" => (format!("    {id} = load %{x}\n"), id),
-                "_P" => (format!("    {id} = load %{x}\n"), id),
-                "_A" => (format!("    {id} = getelemptr %{x}, 0\n"), id),
-                _ => unreachable!(),
-            },
+            Var(x) => {
+                let id = self.counter.get();
+                match &x[0..2] {
+                    "_I" => (format!("    {id} = load %{x}\n"), id),
+                    "_P" => (format!("    {id} = load %{x}\n"), id),
+                    "_A" => (format!("    {id} = getelemptr %{x}, 0\n"), id),
+                    _ => unreachable!(),
+                }
+            }
             Func(fun_id, args) => {
                 let (arg_str, arg_ids) = args
                     .into_iter()

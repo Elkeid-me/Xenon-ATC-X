@@ -89,6 +89,8 @@ pub enum Expr {
     AddAssign(Box<Expr>, Box<Expr>),
     SubAssign(Box<Expr>, Box<Expr>),
     MulAssign(Box<Expr>, Box<Expr>),
+    DivAssign(Box<Expr>, Box<Expr>),
+    ModAssign(Box<Expr>, Box<Expr>),
     AndAssign(Box<Expr>, Box<Expr>),
     OrAssign(Box<Expr>, Box<Expr>),
     XorAssign(Box<Expr>, Box<Expr>),
