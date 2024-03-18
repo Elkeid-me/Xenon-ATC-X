@@ -1,8 +1,7 @@
-use crate::risk;
-
 use super::ast::{Expr::*, ExprCategory::*, ExprConst::*, *};
 use super::parser::{ASTBuilder, ConstInit, Rule, Scope, Symbol};
 use super::ty::*;
+use crate::risk;
 use pest::iterators::Pair;
 
 impl ASTBuilder {
@@ -24,6 +23,7 @@ impl ASTBuilder {
                     Array(
                         iter.next().unwrap().as_str().to_string(),
                         iter.next().unwrap().into_inner().map(|p| self.parse_expr(p)).collect(),
+                        false,
                     )
                 }
                 _ => unreachable!(),
@@ -166,8 +166,9 @@ impl ASTBuilder {
                     for (expect_type, expr) in paras_type.iter().zip(exprs.iter()) {
                         let valid = match (expect_type, self.expr_type(expr)?) {
                             (Type::Int, RefType::Int) => true,
-                            (Type::IntArray(l), RefType::IntArray(r)) => l == r,
+                            (Type::IntArray(l), RefType::IntArray(r)) | (Type::IntPointer(l), RefType::IntPointer(r)) => l == r,
                             (Type::IntArray(l), RefType::IntPointer(r)) => &l[1..] == r,
+                            (Type::IntPointer(l), RefType::IntArray(r)) => l == &r[1..],
                             _ => false,
                         };
                         if !valid {
@@ -179,7 +180,7 @@ impl ASTBuilder {
                 Some(_) => Err(format!("标识符 {id} 不是函数")),
                 None => Err(format!("标识符 {id} 在当前作用域中不存在")),
             },
-            Array(id, exprs) => match self.symbol_table.search(id) {
+            Array(id, exprs, _) => match self.symbol_table.search(id) {
                 // const 数组
                 Some(Symbol(Type::IntArray(len), _, Some(ConstInit::List(_)))) => match exprs.len().cmp(&len.len()) {
                     std::cmp::Ordering::Less => Err(format!("常量数组 {id} 不能转为指针")),
@@ -398,8 +399,13 @@ impl ASTBuilder {
                 });
                 (Func(id, args_simplified), s, true)
             }
-            Array(id, subscripts) => {
-                let Symbol(_, mangled_name, init) = self.symbol_table.search(&id).unwrap();
+            Array(id, subscripts, _) => {
+                let Symbol(ty, mangled_name, init) = self.symbol_table.search(&id).unwrap();
+                let rvalue_int = match ty {
+                    Type::IntPointer(len) => len.len() == subscripts.len() - 1,
+                    Type::IntArray(len) => len.len() == subscripts.len(),
+                    _ => unreachable!(),
+                };
                 let (subscripts_simplified, s, se) =
                     subscripts.into_iter().fold((Vec::new(), false, false), |(mut v, mut s, mut se), expr| {
                         let (e, _s, _se) = self.simplify(expr);
@@ -425,7 +431,7 @@ impl ASTBuilder {
                             (Num(risk!(r_ref[i], ConstInitListItem::Num(i) => i)), true, false)
                         }
                     }
-                    _ => (Array(mangled_name.clone(), subscripts_simplified), s, se),
+                    _ => (Array(mangled_name.clone(), subscripts_simplified, rvalue_int), s, se),
                 }
             }
         }

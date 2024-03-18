@@ -1,12 +1,14 @@
-use crate::risk;
-
 use super::ast::{Expr::*, ExprConst::*, *};
-use super::ty::*;
+use super::ty::RefType;
+use super::ty::Type::{self, *};
+use crate::risk;
 use pest::pratt_parser::Assoc::{Left, Right};
 use pest::pratt_parser::{Op, PrattParser};
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 use std::collections::{HashMap, HashSet};
+use std::iter::repeat;
+use std::vec;
 
 #[derive(Parser)]
 #[grammar = "frontend/sysy.pest"]
@@ -42,18 +44,15 @@ fn demangling(mut id: &str) -> &str {
     if id.len() < 2 {
         return id;
     }
-    let prefix = match &id[0..2] {
-        "_I" => "_I",
-        "_A" => "_A",
-        "_P" => "_P",
+    match &id[0..2] {
+        "_I" | "_A" | "_P" | "_W" => loop {
+            id = &id[2..];
+            if id.len() < 2 || !matches!(&id[0..2], "_I" | "_A" | "_P" | "_W") {
+                return id;
+            }
+        },
         _ => return id,
     };
-    loop {
-        id = &id[2..];
-        if !id.starts_with(prefix) {
-            return id;
-        }
-    }
 }
 
 impl Scope for SymbolTable {
@@ -69,12 +68,12 @@ impl Scope for SymbolTable {
     }
     fn insert_definition(&mut self, id: String, ty: Type, init: Option<ConstInit>) -> Result<String, String> {
         let (mangled_id, prefix_len) = match ty {
-            Type::Int | Type::IntPointer(_) | Type::IntArray(_) => self.name_mangling(id, &ty),
+            Int | IntPointer(_) | IntArray(_) => self.name_mangling(id, &ty),
             _ => (id, 0),
         };
         let original_id = &mangled_id[prefix_len..];
         match self.table.last_mut().unwrap().insert(original_id.to_string(), Symbol(ty, mangled_id.clone(), init)) {
-            Some(Symbol(Type::Keyword, _, _)) => Err(format!("标识符 {original_id} 是关键字，不能重定义")),
+            Some(Symbol(Keyword, _, _)) => Err(format!("标识符 {original_id} 是关键字，不能重定义")),
             Some(_) => Err(format!("标识符 {original_id} 在当前作用域中已存在")),
             None => {
                 match &mut self.local_name_table {
@@ -95,9 +94,9 @@ impl Scope for SymbolTable {
         let origin_len = id.len();
         loop {
             id = match ty {
-                Type::Int => format!("_I{id}"),
-                Type::IntPointer(_) => format!("_P{id}"),
-                Type::IntArray(_) => format!("_A{id}"),
+                Int => format!("_I{id}"),
+                IntPointer(_) => format!("_P{id}"),
+                IntArray(_) => format!("_A{id}"),
                 _ => unreachable!(),
             };
             if !(match &self.local_name_table {
@@ -134,6 +133,10 @@ trait InitListTrait {
     fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self>
     where
         Self: Sized;
+    fn add_empty_list(len: &[usize], init_list: Vec<Self>) -> Vec<Self>
+    where
+        Self: Sized;
+    fn generate_empty_list(len: &[usize]) -> Self;
 }
 
 impl InitListTrait for ConstInitListItem {
@@ -149,6 +152,26 @@ impl InitListTrait for ConstInitListItem {
     fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self> {
         risk!(v.last_mut().unwrap(), Self::ConstInitList(l) => l.as_mut())
     }
+    fn generate_empty_list(len: &[usize]) -> Self {
+        match len.len() {
+            0 => Self::Num(0),
+            _ => Self::new_list(repeat(Self::generate_empty_list(&len[1..])).take(len[0]).collect()),
+        }
+    }
+    fn add_empty_list(len: &[usize], init_list: Vec<Self>) -> Vec<Self> {
+        let empty_list = Self::generate_empty_list(&len[1..]);
+        let empty_list_n = len[0] - init_list.len();
+        init_list
+            .into_iter()
+            .map(|item| match item {
+                ConstInitListItem::ConstInitList(list) => {
+                    ConstInitListItem::ConstInitList(Box::new(Self::add_empty_list(&len[1..], *list)))
+                }
+                i => i,
+            })
+            .chain(repeat(empty_list).take(empty_list_n))
+            .collect()
+    }
 }
 
 impl InitListTrait for InitListItem {
@@ -163,6 +186,24 @@ impl InitListTrait for InitListItem {
     }
     fn get_last(v: &mut Vec<Self>) -> &mut Vec<Self> {
         risk!(v.last_mut().unwrap(), Self::InitList(l) => l.as_mut())
+    }
+    fn generate_empty_list(len: &[usize]) -> Self {
+        match len.len() {
+            0 => Self::Expr(Num(0)),
+            _ => Self::new_list(repeat(Self::generate_empty_list(&len[1..])).take(len[0]).collect()),
+        }
+    }
+    fn add_empty_list(len: &[usize], init_list: Vec<Self>) -> Vec<Self> {
+        let empty_list = Self::generate_empty_list(&len[1..]);
+        let empty_list_n = len[0] - init_list.len();
+        init_list
+            .into_iter()
+            .map(|item| match item {
+                InitListItem::InitList(list) => InitListItem::InitList(Box::new(Self::add_empty_list(&len[1..], *list))),
+                expr => expr,
+            })
+            .chain(repeat(empty_list).take(empty_list_n))
+            .collect()
     }
 }
 
@@ -198,39 +239,8 @@ impl ASTBuilder {
                 | Op::prefix(Rule::pre_inc)
                 | Op::prefix(Rule::pre_dec))
             .op(Op::postfix(Rule::post_inc) | Op::postfix(Rule::post_dec));
-        let table = vec![HashMap::from([
-            ("getint".to_string(), Symbol(Type::Function(Box::new(Type::Int), Vec::new()), String::new(), None)),
-            ("getch".to_string(), Symbol(Type::Function(Box::new(Type::Int), Vec::new()), String::new(), None)),
-            (
-                "getarray".to_string(),
-                Symbol(Type::Function(Box::new(Type::Int), vec![Type::IntPointer(Vec::new())]), String::new(), None),
-            ),
-            ("putint".to_string(), Symbol(Type::Function(Box::new(Type::Void), vec![Type::Int]), String::new(), None)),
-            ("putch".to_string(), Symbol(Type::Function(Box::new(Type::Void), vec![Type::Int]), String::new(), None)),
-            (
-                "putarray".to_string(),
-                Symbol(Type::Function(Box::new(Type::Int), vec![Type::Int, Type::IntPointer(Vec::new())]), String::new(), None),
-            ),
-            ("starttime".to_string(), Symbol(Type::Function(Box::new(Type::Void), Vec::new()), String::new(), None)),
-            ("stoptime".to_string(), Symbol(Type::Function(Box::new(Type::Void), Vec::new()), String::new(), None)),
-            ("if".to_string(), Symbol(Type::Keyword, String::new(), None)),
-            ("while".to_string(), Symbol(Type::Keyword, String::new(), None)),
-            ("break".to_string(), Symbol(Type::Keyword, String::new(), None)),
-            ("continue".to_string(), Symbol(Type::Keyword, String::new(), None)),
-            ("return".to_string(), Symbol(Type::Keyword, String::new(), None)),
-            ("int".to_string(), Symbol(Type::Keyword, String::new(), None)),
-            ("const".to_string(), Symbol(Type::Keyword, String::new(), None)),
-            ("void".to_string(), Symbol(Type::Keyword, String::new(), None)),
-        ])];
-        let global_name_table = HashSet::from([
-            "getint".to_string(),
-            "getch".to_string(),
-            "getarray".to_string(),
-            "putint".to_string(),
-            "putarray".to_string(),
-            "starttime".to_string(),
-            "stoptime".to_string(),
-        ]);
+        let table = vec![HashMap::new()];
+        let global_name_table = HashSet::new();
         let symbol_table = SymbolTable {
             table,
             global_name_table,
@@ -265,7 +275,7 @@ impl ASTBuilder {
         }
     }
 
-    fn __impl<T>(&self, init_list: Pair<Rule>, len_prod: &[usize]) -> Result<(Vec<T>, usize), String>
+    fn parse_init_list_impl<T>(&self, init_list: Pair<Rule>, len_prod: &[usize]) -> Result<(Vec<T>, usize), String>
     where
         T: InitListTrait,
     {
@@ -292,7 +302,7 @@ impl ASTBuilder {
                     // 需要寻位 0 次
                     let rev_depth = len_prod.iter().position(|prod| sum % prod != 0).unwrap_or(len_prod.len() - 1);
                     let depth = len_prod.len() - rev_depth - 1;
-                    let (l, s) = self.__impl(ele, &len_prod[0..rev_depth])?;
+                    let (l, s) = self.parse_init_list_impl(ele, &len_prod[0..rev_depth])?;
                     let v_ref = (0..depth).fold(&mut v, |state, _| {
                         if state.is_empty() {
                             state.push(T::new_list(Vec::new()));
@@ -320,10 +330,9 @@ impl ASTBuilder {
         }
         Ok((v, *len_prod.last().unwrap()))
     }
-
-    fn process_init_list<T>(&self, init_list: Pair<Rule>, lengths: &[usize]) -> Result<Vec<T>, String>
+    fn parse_init_list<T>(&self, init_list: Pair<Rule>, lengths: &[usize]) -> Result<Vec<T>, String>
     where
-        T: InitListTrait,
+        T: InitListTrait + Clone,
     {
         let len_prod: Vec<usize> = lengths
             .iter()
@@ -333,7 +342,7 @@ impl ASTBuilder {
                 Some(*l)
             })
             .collect();
-        Ok(self.__impl::<T>(init_list, &len_prod)?.0)
+        Ok(T::add_empty_list(lengths, self.parse_init_list_impl::<T>(init_list, &len_prod)?.0))
     }
 
     fn parse_definition(&mut self, pair: Pair<Rule>) -> Result<Definition, String> {
@@ -343,8 +352,8 @@ impl ASTBuilder {
                 let id = iter.next().unwrap().as_str().to_string();
                 match self.process_expr_impl(iter.next().unwrap())? {
                     (Num(i), _, ConstEval) => {
-                        let new_id = self.symbol_table.insert_definition(id, Type::Int, Some(ConstInit::Num(i)))?;
-                        Ok((Type::Int, new_id, Some(Init::Const(i))))
+                        let new_id = self.symbol_table.insert_definition(id, Int, Some(ConstInit::Num(i)))?;
+                        Ok((Int, new_id, Some(Init::Const(i))))
                     }
                     (expr, _, _) => Err(format!("{expr:?} 不是整型常量表达式")),
                 }
@@ -354,14 +363,14 @@ impl ASTBuilder {
                 let id = iter.next().unwrap().as_str().to_string();
                 match iter.next().map(|expr| self.process_expr_impl(expr)) {
                     Some(Ok((expr, RefType::Int, _))) => {
-                        let new_id = self.symbol_table.insert_definition(id, Type::Int, None)?;
-                        Ok((Type::Int, new_id, Some(Init::Expr(expr))))
+                        let new_id = self.symbol_table.insert_definition(id, Int, None)?;
+                        Ok((Int, new_id, Some(Init::Expr(expr))))
                     }
                     Some(Ok((expr, _, _))) => Err(format!("{expr:?} 不是整型表达式")),
                     Some(Err(s)) => Err(s),
                     None => {
-                        let new_id = self.symbol_table.insert_definition(id, Type::Int, None)?;
-                        Ok((Type::Int, new_id, None))
+                        let new_id = self.symbol_table.insert_definition(id, Int, None)?;
+                        Ok((Int, new_id, None))
                     }
                 }
             }
@@ -369,13 +378,10 @@ impl ASTBuilder {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
                 let len = self.iter_to_vec(iter.next())?;
-                let init_list = self.process_init_list(iter.next().unwrap(), &len)?;
-                let mangled_id = self.symbol_table.insert_definition(
-                    id,
-                    Type::IntArray(len.clone()),
-                    Some(ConstInit::List(init_list.clone())),
-                )?;
-                Ok((Type::IntArray(len), mangled_id, Some(Init::ConstInitList(init_list))))
+                let init_list = self.parse_init_list(iter.next().unwrap(), &len)?;
+                let mangled_id =
+                    self.symbol_table.insert_definition(id, IntArray(len.clone()), Some(ConstInit::List(init_list.clone())))?;
+                Ok((IntArray(len), mangled_id, Some(Init::ConstInitList(init_list))))
             }
 
             Rule::array_definition => {
@@ -384,13 +390,13 @@ impl ASTBuilder {
                 let len = self.iter_to_vec(iter.next())?;
                 match iter.next() {
                     Some(i) => {
-                        let init_list = self.process_init_list(i, &len)?;
-                        let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
-                        Ok((Type::IntArray(len), mangled_id, Some(Init::InitList(init_list))))
+                        let init_list = self.parse_init_list(i, &len)?;
+                        let mangled_id = self.symbol_table.insert_definition(id, IntArray(len.clone()), None)?;
+                        Ok((IntArray(len), mangled_id, Some(Init::InitList(init_list))))
                     }
                     None => {
-                        let mangled_id = self.symbol_table.insert_definition(id, Type::IntArray(len.clone()), None)?;
-                        Ok((Type::IntArray(len), mangled_id, Some(Init::InitList(Vec::new()))))
+                        let mangled_id = self.symbol_table.insert_definition(id, IntArray(len.clone()), None)?;
+                        Ok((IntArray(len), mangled_id, None))
                     }
                 }
             }
@@ -500,17 +506,17 @@ impl ASTBuilder {
     fn parse_signature(&self, pair: Pair<Rule>) -> Result<(String, Type, Vec<Type>, Vec<String>), String> {
         let mut iter = pair.into_inner();
         let return_type = match iter.next().unwrap().as_rule() {
-            Rule::void_keyword => Type::Void,
-            _ => Type::Int,
+            Rule::void_keyword => Void,
+            _ => Int,
         };
         let id = iter.next().unwrap().as_str().to_string();
         let paras = iter.next().unwrap().into_inner().map(|para| match para.as_rule() {
-            Rule::var_parameter_def => Ok((para.into_inner().skip(1).next().unwrap().as_str().to_string(), Type::Int)),
+            Rule::var_parameter_def => Ok((para.into_inner().skip(1).next().unwrap().as_str().to_string(), Int)),
             Rule::ptr_parameter_def => {
                 let mut iter = para.into_inner().skip(1);
                 let id = iter.next().unwrap().as_str().to_string();
                 let lengths = self.iter_to_vec(iter.next())?;
-                Ok((id, Type::IntPointer(lengths)))
+                Ok((id, IntPointer(lengths)))
             }
             _ => unreachable!(),
         });
@@ -532,8 +538,7 @@ impl ASTBuilder {
         let mut iter = func.into_inner();
         let (id, ret_ty, para_type, mut para_id) = self.parse_signature(iter.next().unwrap())?;
 
-        let mangled_id =
-            self.symbol_table.insert_definition(id, Type::Function(Box::new(ret_ty.clone()), para_type.clone()), None)?;
+        let mangled_id = self.symbol_table.insert_definition(id, Function(Box::new(ret_ty.clone()), para_type.clone()), None)?;
         self.symbol_table.enter_function();
         for (ty, id) in para_type.iter().zip(para_id.iter_mut()) {
             *id = self.symbol_table.insert_definition(id.clone(), ty.clone(), None)?;
@@ -541,7 +546,7 @@ impl ASTBuilder {
         let block = self.parse_block(iter.next().unwrap(), false, ret_ty.to_ref_type())?;
         self.symbol_table.exit_function();
 
-        Ok((Type::Function(Box::new(ret_ty), para_type), mangled_id, Some(Init::Function(para_id, block))))
+        Ok((Function(Box::new(ret_ty), para_type), mangled_id, Some(Init::Function(para_id, block))))
     }
 
     fn parse_global_item(&mut self, pair: Pair<Rule>) -> Result<Definition, String> {
@@ -555,17 +560,39 @@ impl ASTBuilder {
     }
 
     fn parse(mut self, code: &str) -> Result<TranslationUnit, String> {
-        let ast = SysYParser::parse(Rule::translation_unit, code)
-            .unwrap()
-            .filter(|pair| !matches!(pair.as_rule(), Rule::EOI | Rule::int_keyword | Rule::const_keyword))
-            .map(|pair| self.parse_global_item(pair))
+        let sysy_lib: Vec<Result<Definition, String>> = vec![
+            Ok((Function(Box::new(Int), Vec::new()), "getint".to_string(), None)),
+            Ok((Function(Box::new(Int), Vec::new()), "getch".to_string(), None)),
+            Ok((Function(Box::new(Int), vec![IntPointer(Vec::new())]), "getarray".to_string(), None)),
+            Ok((Function(Box::new(Void), vec![Int]), "putint".to_string(), None)),
+            Ok((Function(Box::new(Void), vec![Int]), "putch".to_string(), None)),
+            Ok((Function(Box::new(Void), vec![Int, IntPointer(Vec::new())]), "putarray".to_string(), None)),
+            Ok((Function(Box::new(Void), Vec::new()), "starttime".to_string(), None)),
+            Ok((Function(Box::new(Void), Vec::new()), "stoptime".to_string(), None)),
+            Ok((Keyword, "const".to_string(), None)),
+            Ok((Keyword, "else".to_string(), None)),
+            Ok((Keyword, "if".to_string(), None)),
+            Ok((Keyword, "int".to_string(), None)),
+            Ok((Keyword, "return".to_string(), None)),
+            Ok((Keyword, "void".to_string(), None)),
+        ];
+
+        sysy_lib.iter().for_each(|item| {
+            let (ty, id, _) = item.as_ref().unwrap();
+            let _ = self.symbol_table.insert_definition(id.clone(), ty.clone(), None);
+        });
+
+        let ast = sysy_lib
+            .into_iter()
+            .chain(
+                SysYParser::parse(Rule::translation_unit, code)
+                    .unwrap()
+                    .filter(|pair| !matches!(pair.as_rule(), Rule::EOI | Rule::int_keyword | Rule::const_keyword))
+                    .map(|pair| self.parse_global_item(pair)),
+            )
             .collect::<Result<TranslationUnit, _>>()?;
         match self.symbol_table.search("main") {
-            Some(Symbol(Type::Function(ret_type, para_ty), _, None))
-                if matches!(ret_type.as_ref(), Type::Int) && para_ty.len() == 0 =>
-            {
-                Ok(ast)
-            }
+            Some(Symbol(Function(ret_type, para_ty), _, None)) if matches!(ret_type.as_ref(), Int) && para_ty.len() == 0 => Ok(ast),
             _ => Err("没有 main 函数，或 main 函数不是 () -> int".to_string()),
         }
     }

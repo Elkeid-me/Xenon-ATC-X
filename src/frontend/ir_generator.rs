@@ -1,7 +1,7 @@
-use std::iter::repeat;
-
 use super::ast::{Expr::*, *};
 use super::ty::Type;
+use crate::risk;
+
 struct Counter {
     value: usize,
 }
@@ -26,19 +26,11 @@ impl Generator {
         }
     }
     fn generate(&mut self, ast: TranslationUnit) -> String {
-        let prelude = r"decl @getint(): i32
-decl @getch(): i32
-decl @getarray(*i32): i32
-decl @putint(i32): i32
-decl @putch(i32): i32
-decl @putarray(i32, *i32): i32
-decl @starttime(): i32
-decl @stoptime(): i32
-";
         let ir: String = ast.into_iter().map(|global_item| self.global_def(global_item)).collect();
         let ir = ir.split('\n').filter(|s| !s.is_empty());
         let mut v = Vec::new();
         let mut flag = false;
+        // 删除连续的 `jump`、`ret` 和 `br`.
         for i in ir {
             if i.starts_with("    jump") || i.starts_with("    ret") || i.starts_with("    br") {
                 if !flag {
@@ -77,13 +69,57 @@ decl @stoptime(): i32
         v_3.push(v_2.last().unwrap());
         let ir: String = v_3.into_iter().collect();
         let global: String = self.global_const_init.iter().map(|str| str.as_str()).collect();
-        format!("{prelude}{global}{ir}")
+        format!("{global}{ir}")
     }
-    fn array_elem_lvalue(id: String, subscripts: Vec<Expr>) -> (String, String) {
-        todo!()
+    fn array_elem_lvalue(&mut self, id: String, subscripts: Vec<Expr>) -> (String, String) {
+        match &id[0..2] {
+            "_P" => {
+                let tmp_id_0 = self.counter.get();
+                let mut id = format!("%{id}");
+                let str_0 = format!("    {tmp_id_0} = load {id}\n");
+                let tmp_id_1 = self.counter.get();
+                let (expr_eval, expr_id) = self.expr_rvalue(subscripts[0].clone());
+                let str_1 = format!("{expr_eval}\n    {tmp_id_1} = getptr {tmp_id_0}, {expr_id}\n");
+                id = tmp_id_1;
+                let str: String = subscripts
+                    .into_iter()
+                    .skip(1)
+                    .map(|expr| {
+                        let (expr_eval, expr_id) = self.expr_rvalue(expr);
+                        let new_id = self.counter.get();
+                        let str = format!("{expr_eval}\n    {new_id} = getelemptr {id}, {expr_id}\n");
+                        id = new_id;
+                        str
+                    })
+                    .collect();
+                (format!("{str_0}{str_1}{str}"), id)
+            }
+            "_A" => {
+                let mut id = format!("%{id}");
+                let str = subscripts
+                    .into_iter()
+                    .map(|expr| {
+                        let (expr_eval, expr_id) = self.expr_rvalue(expr);
+                        let new_id = self.counter.get();
+                        let str = format!("{expr_eval}\n    {new_id} = getelemptr {id}, {expr_id}\n");
+                        id = new_id;
+                        str
+                    })
+                    .collect();
+                (str, id)
+            }
+            _ => unreachable!(),
+        }
     }
-    fn array_elem_rvalue(id: String, subscripts: Vec<Expr>) -> (String, String) {
-        todo!()
+    fn array_elem_rvalue(&mut self, id: String, subscripts: Vec<Expr>, rvalue_int: bool) -> (String, String) {
+        let (expr_eval, expr_id) = self.array_elem_lvalue(id, subscripts);
+        if rvalue_int {
+            let tmp_id = self.counter.get();
+            (format!("{expr_eval}    {tmp_id} = load {expr_id}\n"), tmp_id)
+        } else {
+            let tmp_id = self.counter.get();
+            (format!("{expr_eval}    {tmp_id} = getelemptr {expr_id}, 0\n"), tmp_id)
+        }
     }
     fn expr_xvalue(&mut self, expr: Expr) -> String {
         match expr {
@@ -117,7 +153,7 @@ decl @stoptime(): i32
                     .unwrap_or_default();
                 format!("{}    call @{}({})\n", arg_str, id, arg_ids)
             }
-            Array(_, subscripts) => subscripts.into_iter().map(|expr| self.expr_xvalue(expr)).collect(),
+            Array(_, subscripts, _) => subscripts.into_iter().map(|expr| self.expr_xvalue(expr)).collect(),
             Var(_) | Num(_) => String::new(),
             assign => self.expr_rvalue(assign).0,
         }
@@ -138,7 +174,7 @@ decl @stoptime(): i32
             ShLAssign(_, _) => todo!(),
             SaRAssign(_, _) => todo!(),
             Var(x) => (String::new(), format!("%{x}")),
-            Array(id, subscripts) => todo!(),
+            Array(id, subscripts, _) => self.array_elem_lvalue(id, subscripts),
             _ => unreachable!(),
         }
     }
@@ -297,30 +333,28 @@ decl @stoptime(): i32
                 let (expr_eval, expr_id) = self.expr_rvalue(*expr);
                 (format!("{expr_eval}    {id} = xor 1, {expr_id}\n"), id)
             }
-            PostInc(expr) => todo!(),
-            PostDec(expr) => todo!(),
-            PreInc(expr) => todo!(),
-            PreDec(expr) => todo!(),
+            PostInc(_) => todo!(),
+            PostDec(_) => todo!(),
+            PreInc(_) => todo!(),
+            PreDec(_) => todo!(),
             Assignment(l, r) => {
                 let (r_eval, r_id) = self.expr_rvalue(*r);
                 let (l_eval, l_id) = self.expr_lvalue(*l);
                 (format!("{r_eval}{l_eval}    store {r_id}, {l_id}\n"), r_id)
             }
-            AddAssign(l, r) => todo!(),
-            SubAssign(l, r) => todo!(),
-            MulAssign(l, r) => todo!(),
-            AndAssign(l, r) => todo!(),
-            OrAssign(l, r) => todo!(),
-            XorAssign(l, r) => todo!(),
-            ShLAssign(l, r) => todo!(),
-            SaRAssign(l, r) => todo!(),
+            AddAssign(_, _) => todo!(),
+            SubAssign(_, _) => todo!(),
+            MulAssign(_, _) => todo!(),
+            AndAssign(_, _) => todo!(),
+            OrAssign(_, _) => todo!(),
+            XorAssign(_, _) => todo!(),
+            ShLAssign(_, _) => todo!(),
+            SaRAssign(_, _) => todo!(),
             Num(i) => (String::new(), i.to_string()),
             Var(x) => match &x[0..2] {
-                "_I" => {
-                    let tmp_id = self.counter.get();
-                    (format!("    {tmp_id} = load %{x}\n"), tmp_id)
-                }
-                "_P" => (String::new(), format!("%{x}")),
+                "_I" => (format!("    {id} = load %{x}\n"), id),
+                "_P" => (format!("    {id} = load %{x}\n"), id),
+                "_A" => (format!("    {id} = getelemptr %{x}, 0\n"), id),
                 _ => unreachable!(),
             },
             Func(fun_id, args) => {
@@ -332,7 +366,7 @@ decl @stoptime(): i32
                 let tmp_id = self.counter.get();
                 (format!("{}    {} = call @{}({})\n", arg_str, tmp_id, fun_id, arg_ids), tmp_id)
             }
-            Array(array_id, subscripts) => todo!(),
+            Array(id, subscripts, rvalue_int) => self.array_elem_rvalue(id, subscripts, rvalue_int),
         }
     }
     fn statement(&mut self, statement: Statement, while_id: &str, while_next_id: &str) -> String {
@@ -369,8 +403,7 @@ decl @stoptime(): i32
                 let (cond_str, cond_id) = self.expr_rvalue(condition);
                 let (block_str, block_id) = self.block(*block, &while_id, &while_next_id);
                 format!(
-                    r"    jump {while_id}
-{block_id}:
+                    "    jump {while_id}\n{block_id}:
 {block_str}    jump {while_id}
 {while_id}:
 {cond_str}    br {cond_id}, {block_id}, {while_next_id}
@@ -401,6 +434,16 @@ decl @stoptime(): i32
             .collect();
         (body, id)
     }
+    fn fun_decl(&self, id: String, ret_type: Type, para_type: Vec<Type>) -> String {
+        let ret_type_str = match ret_type {
+            Type::Int => ": i32",
+            Type::Void => "",
+            _ => unreachable!(),
+        };
+        let para_list_str =
+            para_type.iter().map(|ty| format!("{}", ty.to_koopa_type_str())).reduce(|l, r| format!("{l}, {r}")).unwrap_or_default();
+        format!("decl @{id}({para_list_str}){ret_type_str}\n")
+    }
     fn fun_def(&mut self, id: String, ret_type: Type, para_type: Vec<Type>, para_id: Vec<String>, block: Block) -> String {
         let ret_type_str = match ret_type {
             Type::Int => ": i32",
@@ -420,14 +463,7 @@ decl @stoptime(): i32
             .map(|(id, ty)| format!("    %{} = alloc {}\n    store @{}, %{}\n", id, ty.to_koopa_type_str(), id, id))
             .collect();
         let (block, _) = self.block(block, "", "");
-        format!(
-            r"fun @{id}({para_list_str}){ret_type_str} {{
-{entry_id}:
-{para_alloc}
-{block}
-}}
-"
-        )
+        format!("fun @{id}({para_list_str}){ret_type_str} {{\n{entry_id}:\n{para_alloc}\n{block}\n}}\n")
     }
     fn def(&mut self, def: Definition) -> String {
         match def {
@@ -435,55 +471,40 @@ decl @stoptime(): i32
             (Type::Int, _, Some(Init::Const(_))) => String::new(),
             (Type::Int, id, Some(Init::Expr(expr))) => {
                 let (expr_eval, expr_id) = self.expr_rvalue(expr);
-                format!(
-                    r"{expr_eval}    %{id} = alloc i32
-    store {expr_id}, %{id}
-"
-                )
+                format!("{expr_eval}    %{id} = alloc i32\n    store {expr_id}, %{id}\n")
             }
             (Type::IntArray(len), id, Some(Init::ConstInitList(list))) => {
                 let init_str = Self::const_init_list_to_str(&len, list);
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
-                self.global_const_init.push(format!("global %{id}: {ty_str}, {init_str}\n"));
+                self.global_const_init.push(format!("global %{id} = alloc {ty_str}, {init_str}\n"));
                 String::new()
+            }
+            (Type::IntArray(len), id, Some(Init::InitList(list))) => self.local_array(Type::IntArray(len), id, list),
+            (Type::IntArray(len), id, None) => {
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                format!("    %{} = alloc {}\n", id, ty_str)
             }
             _ => unimplemented!(),
         }
     }
-    fn generate_empty_list(len: &[usize]) -> String {
-        match len.len() {
-            0 => "0".to_string(),
-            _ => {
-                let content =
-                    repeat(Self::generate_empty_list(&len[1..])).take(len[0]).reduce(|l, r| format!("{l}, {r}")).unwrap_or_default();
-                format!("{{{content}}}")
-            }
-        }
-    }
     fn init_list_to_str(len: &[usize], list: InitList) -> String {
-        let empty_list = Self::generate_empty_list(&len[1..]);
-        let empty_list_n = len[0] - list.len();
         let content = list
             .into_iter()
             .map(|item| match item {
                 InitListItem::InitList(l) => Self::init_list_to_str(&len[1..], *l),
                 InitListItem::Expr(e) => e.get_num().to_string(),
             })
-            .chain(repeat(empty_list).take(empty_list_n))
             .reduce(|l, r| format!("{l}, {r}"))
             .unwrap_or_default();
         format!("{{{content}}}")
     }
     fn const_init_list_to_str(len: &[usize], list: ConstInitList) -> String {
-        let empty_list = Self::generate_empty_list(&len[1..]);
-        let empty_list_n = len[0] - list.len();
         let content = list
             .into_iter()
             .map(|item| match item {
                 ConstInitListItem::ConstInitList(l) => Self::const_init_list_to_str(&len[1..], *l),
                 ConstInitListItem::Num(i) => i.to_string(),
             })
-            .chain(repeat(empty_list).take(empty_list_n))
             .reduce(|l, r| format!("{l}, {r}"))
             .unwrap_or_default();
         format!("{{{content}}}")
@@ -493,48 +514,59 @@ decl @stoptime(): i32
             (Type::Function(ret_type, para_type), id, Some(Init::Function(para_id, block))) => {
                 self.fun_def(id, *ret_type, para_type, para_id, block)
             }
+            (Type::Function(ret_type, para_type), id, None) => self.fun_decl(id, *ret_type, para_type),
             (Type::Int, id, None) => format!("global %{id} = alloc i32, 0\n"),
             (Type::Int, id, Some(Init::Expr(expr))) => {
                 let (expr_eval, expr_id) = self.expr_rvalue(expr);
-                format!("{expr_eval}global %{id} = alloc i32, {expr_id}\n")
+                format!("{expr_eval}    global %{id} = alloc i32, {expr_id}\n")
             }
-            (Type::Int, _, Some(Init::Const(_))) => String::new(),
+            (Type::IntArray(len), id, None) => {
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                format!("global %{id} = alloc {ty_str}, zeroinit\n")
+            }
             (Type::IntArray(len), id, Some(Init::InitList(list))) => {
                 let init_str = Self::init_list_to_str(&len, list);
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
-                format!("global %{id}: {ty_str}, {init_str}\n")
+                format!("global %{id} = alloc {ty_str}, {init_str}\n")
             }
             (Type::IntArray(len), id, Some(Init::ConstInitList(list))) => {
                 let init_str = Self::const_init_list_to_str(&len, list);
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
-                format!("global %{id}: {ty_str}, {init_str}\n")
+                format!("global %{id} = alloc {ty_str}, {init_str}\n")
             }
-            _ => unimplemented!(),
+            _ => String::new(),
         }
+    }
+    fn local_array_impl(&mut self, len: &[usize], id: &str, list: Vec<InitListItem>) -> String {
+        match len.len() {
+            1 => list
+                .into_iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let (expr_eval, expr_id) = self.expr_rvalue(risk!(item, InitListItem::Expr(expr) => expr));
+                    let tmp_id = self.counter.get();
+                    format!("{expr_eval}    {tmp_id} = getelemptr {id}, {i}\n    store {expr_id}, {tmp_id}\n")
+                })
+                .collect(),
+            _ => list
+                .into_iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let tmp_id = self.counter.get();
+                    let str = self.local_array_impl(&len[1..], &tmp_id, risk!(item, InitListItem::InitList(list) => *list));
+                    format!("    {tmp_id} = getelemptr {id}, {i}\n{str}")
+                })
+                .collect(),
+        }
+    }
+    fn local_array(&mut self, ty: Type, id: String, list: Vec<InitListItem>) -> String {
+        let local_id = format!("%{}", id);
+        let alloc = format!("    {} = alloc {}\n", &local_id, ty.to_koopa_type_str());
+        let len = risk!(ty, Type::IntArray(len) => len);
+        format!("{}{}", alloc, self.local_array_impl(&len, &local_id, list))
     }
 }
 
-pub fn generator_ir_eval(ast: TranslationUnit) -> String {
+pub fn generator_ir(ast: TranslationUnit) -> String {
     Generator::new().generate(ast)
 }
-
-// use koopa::ir::entities::{FunctionData, Program, BasicBlockData};
-
-// pub fn generate_ir(ast: TranslationUnit) -> Program {
-//     let mut program = Program::new();
-//     let mut counter = 0usize;
-//     for ele in ast {
-//         match ele {
-//             (Type::Function(ret_ty, para_ty), id, Some(_))
-//             | (Type::Function(ret_ty, para_ty), id, None) => {
-//                 let new_func_decl =
-//                     FunctionData::new_decl(format!("@{id}"), para_ty.into_iter().map(|ty| ty.to_koopa_type()).collect(), ret_ty.to_koopa_type());
-//                 let new_bb = BasicBlockData::
-//                 new_func_decl.layout_mut().bbs_mut().push_back(key, node)
-//                 program.new_func(new_func_decl);
-//             }
-//             _ => (),
-//         }
-//     }
-//     program
-// }

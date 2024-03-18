@@ -22,9 +22,7 @@ fn compile() -> Result<(), Box<dyn std::error::Error>> {
     let mut f = File::create(output)?;
     match mode {
         arg_parse::Mode::Koopa => {
-            // let ir = frontend::generate_ir(&code)?;
-            // koopa::back::KoopaGenerator::new(f).generate_on(&ir)?
-            let ir = frontend::generate_ir_str(&code)?;
+            let ir = frontend::generate_ir(&code)?;
             f.write_fmt(format_args!("{ir}"))?;
         }
         _ => {

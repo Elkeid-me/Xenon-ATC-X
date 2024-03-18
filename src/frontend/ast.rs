@@ -17,7 +17,7 @@ pub enum Init {
     ConstInitList(ConstInitList),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InitListItem {
     InitList(Box<InitList>),
     Expr(Expr),
@@ -52,7 +52,7 @@ pub enum BlockItem {
     Statement(Statement),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
@@ -98,7 +98,7 @@ pub enum Expr {
     Num(i32),
     Var(String),
     Func(String, Vec<Expr>),
-    Array(String, Vec<Expr>),
+    Array(String, Vec<Expr>, bool),
 }
 
 #[derive(Debug, Clone, Copy)]
