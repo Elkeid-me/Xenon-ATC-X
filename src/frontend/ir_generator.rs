@@ -45,7 +45,7 @@ impl Generator {
         let mut v_2 = Vec::new();
         for i in 0..v.len() - 1 {
             if (v[i].starts_with("    jump") || v[i].starts_with("    ret") || v[i].starts_with("    br"))
-                && (v[i + 1].chars().last().unwrap() != ':' && v[i + 1].chars().last().unwrap() != '}')
+                && (v[i + 1].chars().last().unwrap() != ':' && v[i + 1] != "}")
             {
                 v_2.push(format!("{}\n", v[i]));
                 v_2.push(format!("{}:\n", self.counter.get()));
@@ -157,31 +157,21 @@ impl Generator {
     }
     fn expr_lvalue(&mut self, expr: Expr) -> (String, String) {
         match expr {
-            PreInc(expr) => {
-                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
-                let tmp_id_1 = self.counter.get();
-                let tmp_id_2 = self.counter.get();
-                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = add {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), expr_id)
-            }
-            PreDec(expr) => {
-                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
-                let tmp_id_1 = self.counter.get();
-                let tmp_id_2 = self.counter.get();
-                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = sub {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), expr_id)
-            }
+            PreInc(expr) => self.inc_dec_helper(*expr, "add", true, true),
+            PreDec(expr) => self.inc_dec_helper(*expr, "sub", true, true),
             Assignment(l, r) => {
                 let (r_eval, r_id) = self.expr_rvalue(*r);
                 let (l_eval, l_id) = self.expr_lvalue(*l);
                 (format!("{r_eval}{l_eval}    store {r_id}, {l_id}\n"), l_id)
             }
             AddAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
-            SubAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
-            MulAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
-            AndAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
-            OrAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
-            XorAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
-            ShLAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
-            SaRAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
+            SubAssign(l, r) => self.assign_expr_helper(*l, *r, "sub", false),
+            MulAssign(l, r) => self.assign_expr_helper(*l, *r, "mul", false),
+            AndAssign(l, r) => self.assign_expr_helper(*l, *r, "and", false),
+            OrAssign(l, r) => self.assign_expr_helper(*l, *r, "or", false),
+            XorAssign(l, r) => self.assign_expr_helper(*l, *r, "xor", false),
+            ShLAssign(l, r) => self.assign_expr_helper(*l, *r, "shl", false),
+            SaRAssign(l, r) => self.assign_expr_helper(*l, *r, "sar", false),
             Var(x) => (String::new(), format!("%{x}")),
             Array(id, subscripts, _) => self.array_elem_lvalue(id, subscripts),
             _ => unreachable!(),
@@ -199,6 +189,22 @@ impl Generator {
         let (l_eval, l_id) = self.expr_rvalue(l);
         let (r_eval, r_id) = self.expr_rvalue(r);
         (format!("{l_eval}{r_eval}    {id} = {op} {l_id}, {r_id}\n"), id)
+    }
+    fn arith_unary_helper(&mut self, expr: Expr, operate: &str) -> (String, String) {
+        let id = self.counter.get();
+        let (expr_eval, expr_id) = self.expr_rvalue(expr);
+        (format!("{expr_eval}    {id} = {operate}, {expr_id}\n"), id)
+    }
+    fn inc_dec_helper(&mut self, expr: Expr, op: &str, prefix: bool, rvalue: bool) -> (String, String) {
+        let (expr_eval, expr_id) = self.expr_lvalue(expr);
+        let tmp_id_1 = self.counter.get();
+        let tmp_id_2 = self.counter.get();
+        match (rvalue, prefix) {
+            (true, true) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_2),
+            (true, false) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_1),
+            (false, true) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), expr_id),
+            (false, false) => unreachable!()
+        }
     }
     fn expr_rvalue(&mut self, expr: Expr) -> (String, String) {
         match expr {
@@ -280,45 +286,13 @@ impl Generator {
                     id,
                 )
             }
-            LogicNot(expr) => {
-                let id = self.counter.get();
-                let (expr_eval, expr_id) = self.expr_rvalue(*expr);
-                (format!("{expr_eval}    {id} = eq 0, {expr_id}\n"), id)
-            }
-            Nega(expr) => {
-                let id = self.counter.get();
-                let (expr_eval, expr_id) = self.expr_rvalue(*expr);
-                (format!("{expr_eval}    {id} = sub 0, {expr_id}\n"), id)
-            }
-            Not(expr) => {
-                let id = self.counter.get();
-                let (expr_eval, expr_id) = self.expr_rvalue(*expr);
-                (format!("{expr_eval}    {id} = xor 1, {expr_id}\n"), id)
-            }
-            PostInc(expr) => {
-                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
-                let tmp_id_1 = self.counter.get();
-                let tmp_id_2 = self.counter.get();
-                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = add {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_1)
-            }
-            PostDec(expr) => {
-                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
-                let tmp_id_1 = self.counter.get();
-                let tmp_id_2 = self.counter.get();
-                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = sub {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_1)
-            }
-            PreInc(expr) => {
-                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
-                let tmp_id_1 = self.counter.get();
-                let tmp_id_2 = self.counter.get();
-                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = add {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_2)
-            }
-            PreDec(expr) => {
-                let (expr_eval, expr_id) = self.expr_lvalue(*expr);
-                let tmp_id_1 = self.counter.get();
-                let tmp_id_2 = self.counter.get();
-                (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = sub {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_2)
-            }
+            LogicNot(expr) => self.arith_unary_helper(*expr, "eq 0"),
+            Nega(expr) => self.arith_unary_helper(*expr, "sub 0"),
+            Not(expr) => self.arith_unary_helper(*expr, "xor 1"),
+            PostInc(expr) => self.inc_dec_helper(*expr, "add", false, true),
+            PostDec(expr) => self.inc_dec_helper(*expr, "sub", false, true),
+            PreInc(expr) => self.inc_dec_helper(*expr, "add", true, true),
+            PreDec(expr) => self.inc_dec_helper(*expr, "sub", true, true),
             Assignment(l, r) => {
                 let (r_eval, r_id) = self.expr_rvalue(*r);
                 let (l_eval, l_id) = self.expr_lvalue(*l);
@@ -359,45 +333,75 @@ impl Generator {
     fn statement(&mut self, statement: Statement, while_id: &str, while_next_id: &str) -> String {
         match statement {
             Statement::Expr(expr) => self.expr_xvalue(expr),
-            Statement::If(condition, then_block, else_block) => {
-                let next_block_id = self.counter.get();
-                let (cond_str, cond_id) = self.expr_rvalue(condition);
-                let (then_str, then_id) = self.block(*then_block, while_id, while_next_id);
-                if else_block.is_empty() {
-                    format!(
-                        r"{cond_str}    br {cond_id}, {then_id}, {next_block_id}
+            Statement::If(condition, then_block, else_block) => match condition {
+                Num(0) => {
+                    if else_block.is_empty() {
+                        String::new()
+                    } else {
+                        let (else_str, _) = self.block(*else_block, while_id, while_next_id);
+                        else_str
+                    }
+                }
+                Num(_) => {
+                    let (then_str, _) = self.block(*then_block, while_id, while_next_id);
+                    then_str
+                }
+                _ => {
+                    let next_block_id = self.counter.get();
+                    let (cond_eval, cond_id) = self.expr_rvalue(condition);
+                    let (then_str, then_id) = self.block(*then_block, while_id, while_next_id);
+                    if else_block.is_empty() {
+                        format!(
+                            r"{cond_eval}    br {cond_id}, {then_id}, {next_block_id}
 {then_id}:
 {then_str}    jump {next_block_id}
 {next_block_id}:
 "
-                    )
-                } else {
-                    let (else_str, else_id) = self.block(*else_block, while_id, while_next_id);
-                    format!(
-                        r"{cond_str}    br {cond_id}, {then_id}, {else_id}
+                        )
+                    } else {
+                        let (else_str, else_id) = self.block(*else_block, while_id, while_next_id);
+                        format!(
+                            r"{cond_eval}    br {cond_id}, {then_id}, {else_id}
 {then_id}:
 {then_str}    jump {next_block_id}
 {else_id}:
 {else_str}    jump {next_block_id}
 {next_block_id}:
 "
+                        )
+                    }
+                }
+            },
+            Statement::While(condition, block) => match condition {
+                Num(0) => String::new(),
+                Num(_) => {
+                    let while_id = self.counter.get();
+                    let while_next_id = self.counter.get();
+                    let (block_str, _) = self.block(*block, &while_id, &while_next_id);
+                    format!(
+                        r"    jump {while_id}
+{while_id}:
+{block_str}    jump {while_id}
+{while_next_id}:
+"
                     )
                 }
-            }
-            Statement::While(condition, block) => {
-                let while_id = self.counter.get();
-                let while_next_id = self.counter.get();
-                let (cond_str, cond_id) = self.expr_rvalue(condition);
-                let (block_str, block_id) = self.block(*block, &while_id, &while_next_id);
-                format!(
-                    "    jump {while_id}\n{block_id}:
+                _ => {
+                    let while_id = self.counter.get();
+                    let while_next_id = self.counter.get();
+                    let (cond_str, cond_id) = self.expr_rvalue(condition);
+                    let (block_str, block_id) = self.block(*block, &while_id, &while_next_id);
+                    format!(
+                        r"    jump {while_id}
+{block_id}:
 {block_str}    jump {while_id}
 {while_id}:
 {cond_str}    br {cond_id}, {block_id}, {while_next_id}
 {while_next_id}:
 "
-                )
-            }
+                    )
+                }
+            },
             Statement::Return(expr) => match expr {
                 Some(expr) => {
                     let (expr_str, expr_id) = self.expr_rvalue(expr);
@@ -505,7 +509,7 @@ impl Generator {
             (Type::Int, id, None) => format!("global %{id} = alloc i32, 0\n"),
             (Type::Int, id, Some(Init::Expr(expr))) => {
                 let (expr_eval, expr_id) = self.expr_rvalue(expr);
-                format!("{expr_eval}    global %{id} = alloc i32, {expr_id}\n")
+                format!("{expr_eval}global %{id} = alloc i32, {expr_id}\n")
             }
             (Type::IntArray(len), id, None) => {
                 let ty_str = Type::IntArray(len).to_koopa_type_str();

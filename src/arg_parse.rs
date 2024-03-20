@@ -4,7 +4,6 @@ pub enum Mode {
     Koopa,
     RiscV,
     Optimization,
-    AST,
 }
 
 pub type ParsedArgs = (Mode, String, String);
@@ -15,7 +14,6 @@ pub fn parse(mut args: Args) -> Result<ParsedArgs, String> {
         "-koopa" => Ok(Mode::Koopa),
         "-riscv" => Ok(Mode::RiscV),
         "-perf" => Ok(Mode::Optimization),
-        "-ast" => Ok(Mode::AST),
         s => Err(format!("未知的模式: {}", s)),
     }?;
     let input = args.next().unwrap();

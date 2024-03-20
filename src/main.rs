@@ -20,15 +20,11 @@ fn compile() -> Result<(), Box<dyn std::error::Error>> {
     let (mode, input, output) = arg_parse::parse(std::env::args())?;
     let code = preprocessor::preprocess(&read_to_string(input)?.replace("\r\n", "\n"));
     let mut f = File::create(output)?;
+    let ir = frontend::generate_ir(&code)?;
     match mode {
-        arg_parse::Mode::Koopa => {
-            let ir = frontend::generate_ir(&code)?;
-            f.write_fmt(format_args!("{ir}"))?;
-        }
-        _ => {
-            let ast = frontend::generate_ast(&code);
-            f.write_fmt(format_args!("{ast:#?}"))?;
-        }
+        arg_parse::Mode::Koopa => f.write_fmt(format_args!("{ir}"))?,
+        arg_parse::Mode::RiscV => f.write_fmt(format_args!("{}", backend::generate_asm(ir)))?,
+        _ => todo!(),
     }
     Ok(())
 }

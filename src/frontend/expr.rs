@@ -241,12 +241,73 @@ impl ASTBuilder {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a + b), true, false),
                 ((Num(0), _, _), (e, _, e_se)) => (e, true, e_se),
                 ((e, _, e_se), (Num(0), _, _)) => (e, true, e_se),
-                ((l, _, l_se), (Nega(r), _, r_se)) => (Sub(Box::new(l), r), true, l_se || r_se),
+                ((Num(a), _, _), (Add(b, r), _, r_se))
+                | ((Add(b, r), _, r_se), (Num(a), _, _))
+                | ((Num(a), _, _), (Add(r, b), _, r_se))
+                | ((Add(r, b), _, r_se), (Num(a), _, _))
+                    if matches!(*b, Num(_)) =>
+                {
+                    let b = risk!(*b, Num(b) => b);
+                    (Add(Box::new(Num(a + b)), r), true, r_se)
+                }
+                ((Sub(b, r), _, r_se), (Num(a), _, _)) | ((Num(a), _, _), (Sub(b, r), _, r_se))
+                    if matches!(*b, Num(_)) =>
+                {
+                    let b = risk!(*b, Num(b) => b);
+                    (Sub(Box::new(Num(a - b)), r), true, r_se)
+                }
+                ((Sub(r, b), _, r_se), (Num(a), _, _)) | ((Num(a), _, _), (Sub(r, b), _, r_se))
+                    if matches!(*b, Num(_)) =>
+                {
+                    let b = risk!(*b, Num(b) => b);
+                    (Add(r, Box::new(Num(a - b))), true, r_se)
+                }
+                ((Mul(a, b), _, l_se), (Mul(c, d), _, r_se))
+                | ((Mul(a, b), _, l_se), (Mul(d, c), _, r_se))
+                | ((Mul(b, a), _, l_se), (Mul(c, d), _, r_se))
+                | ((Mul(b, a), _, l_se), (Mul(d, c), _, r_se))
+                    if *a == *c => (Mul(a, Box::new(Add(b, d))), true, l_se || r_se),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Add(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Sub(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a - b), true, false),
+                ((Num(0), _, _), (r, _, r_se)) => (Nega(Box::new(r)), true, r_se),
+                ((l, _, l_se), (Num(0), _, _)) => (l, true, l_se),
+                ((Num(a), _, _), (Add(r, b), _, r_se)) | ((Num(a), _, _), (Add(b, r), _, r_se))
+                    if matches!(*b, Num(_)) =>
+                {
+                    let b = risk!(*b, Num(b) => b);
+                    (Sub(Box::new(Num(a - b)), r), true, r_se)
+                }
+                ((Add(r, b), _, r_se), (Num(a), _, _)) | ((Add(b, r), _, r_se), (Num(a), _, _))
+                    if matches!(*b, Num(_)) =>
+                {
+                    let b = risk!(*b, Num(b) => b);
+                    (Add(Box::new(Num(b - a)), r), true, r_se)
+                }
+                ((Num(a), _, _), (Sub(r, b), _, r_se)) if matches!(*b, Num(_)) => {
+                    let b = risk!(*b, Num(b) => b);
+                    (Sub(Box::new(Num(a + b)), r), true, r_se)
+                }
+                ((Num(a), _, _), (Sub(b, r), _, r_se)) if matches!(*b, Num(_)) => {
+                    let b = risk!(*b, Num(b) => b);
+                    (Add(Box::new(Num(a - b)), r), true, r_se)
+                }
+                ((Sub(r, b), _, r_se), (Num(a), _, _)) if matches!(*b, Num(_)) => {
+                    let b = risk!(*b, Num(b) => b);
+                    (Sub(Box::new(Num(a + b)), r), true, r_se)
+                }
+                ((Sub(b, r), _, r_se), (Num(a), _, _)) if matches!(*b, Num(_)) => {
+                    let b = risk!(*b, Num(b) => b);
+                    (Sub(Box::new(Num(b - a)), r), true, r_se)
+                }
                 ((l, _, _), (r, _, _)) if l == r => (Num(0), true, false),
+                ((l, _, l_se), (Nega(r), _, r_se)) => (Add(Box::new(l), r), true, l_se || r_se),
+                ((Mul(a, b), _, l_se), (Mul(c, d), _, r_se))
+                | ((Mul(a, b), _, l_se), (Mul(d, c), _, r_se))
+                | ((Mul(b, a), _, l_se), (Mul(c, d), _, r_se))
+                | ((Mul(b, a), _, l_se), (Mul(d, c), _, r_se))
+                    if *a == *c => (Mul(a, Box::new(Sub(b, d))), true, l_se || r_se),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Sub(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Mul(l, r) => match (self.simplify(*l), self.simplify(*r)) {
@@ -254,24 +315,30 @@ impl ASTBuilder {
                 ((Num(0), _, _), (_, _, false)) | ((_, _, false), (Num(0), _, _)) => (Num(0), true, false),
                 ((Num(1), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(1), _, _)) => (r, true, r_se),
                 ((Num(-1), _, _), (r, _, r_se)) | ((r, _, r_se), (Num(-1), _, _)) => (Nega(Box::new(r)), true, r_se),
+                ((Num(a), _, _), (Mul(b, r), _, r_se))
+                | ((Mul(b, r), _, r_se), (Num(a), _, _))
+                | ((Num(a), _, _), (Mul(r, b), _, r_se))
+                | ((Mul(r, b), _, r_se), (Num(a), _, _))
+                    if matches!(*b, Num(_)) =>
+                {
+                    let b = risk!(*b, Num(b) => b);
+                    (Mul(Box::new(Num(a * b)), r), true, r_se)
+                }
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Mul(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Div(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                (_, (Num(0), _, _)) => {
-                    println!("表达式中出现除零");
-                    (Num(2147483647), true, false)
-                }
+                (_, (Num(0), _, _)) => (Num(0), true, false),
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a / b), true, false),
                 ((Num(0), _, _), (_, _, false)) => (Num(0), true, false),
                 ((r, _, r_se), (Num(1), _, _)) => (r, true, r_se),
                 ((r, _, r_se), (Num(-1), _, _)) => (Nega(Box::new(r)), true, r_se),
+                ((Mul(a, b), _, l_se), (c, _, _)) | ((Mul(b, a), _, l_se), (c, _, _)) if *b == c => (*a, true, l_se),
+                ((Mul(a, b), _, l_se), (Nega(c), _, _)) | ((Mul(b, a), _, l_se), (Nega(c), _, _))
+                    if *b == *c => (Nega(a), true, l_se),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Div(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Mod(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                (_, (Num(0), _, _)) => {
-                    println!("表达式中出现除零");
-                    (Num(2147483647), true, false)
-                }
+                (_, (Num(0), _, _)) => (Num(0), true, false),
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a % b), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Mod(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
@@ -315,18 +382,22 @@ impl ASTBuilder {
             },
             Grt(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num((a > b) as i32), true, false),
+                ((l, _, _), (r, _, _)) if l == r => (Num(0), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Grt(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Geq(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num((a >= b) as i32), true, false),
+                ((l, _, _), (r, _, _)) if l == r => (Num(1), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Geq(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Les(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num((a < b) as i32), true, false),
+                ((l, _, _), (r, _, _)) if l == r => (Num(0), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Les(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Leq(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num((a <= b) as i32), true, false),
+                ((l, _, _), (r, _, _)) if l == r => (Num(1), true, false),
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Leq(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             LogicAnd(l, r) => match (self.simplify(*l), self.simplify(*r)) {
@@ -486,6 +557,8 @@ impl PartialEq for Expr {
             (Not(l0), Not(r0)) => l0 == r0,
             (Num(l0), Num(r0)) => l0 == r0,
             (Var(l0), Var(r0)) => l0 == r0,
+            (Array(id0, subs0, _), Array(id1, subs1, _)) =>
+                id0 == id1 && subs0.len() == subs1.len() && subs0.iter().zip(subs1.iter()).all(|(l, r)| l == r),
             _ => false,
         }
     }
