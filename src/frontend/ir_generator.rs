@@ -55,13 +55,23 @@ impl Generator {
         }
         v_2.push(format!("{}\n", v.last().unwrap()));
         let mut v_3: Vec<&str> = Vec::new();
+        let mut flag = false;
         for i in 0..v_2.len() - 1 {
+            if v_2[i].ends_with("): i32 {\n") {
+                flag = true;
+            } else if v_2[i].ends_with(") {\n") {
+                flag = false;
+            }
             if !(v_2[i].starts_with("    jump") || v_2[i].starts_with("    ret") || v_2[i].starts_with("    br"))
                 && !v_2[i].ends_with("{\n")
                 && (v_2[i + 1] == "}\n" || v_2[i + 1].ends_with(":\n"))
             {
                 v_3.push(&v_2[i]);
-                v_3.push("    ret\n");
+                if flag {
+                    v_3.push("    ret 0\n");
+                } else {
+                    v_3.push("    ret\n");
+                }
             } else {
                 v_3.push(&v_2[i]);
             }
@@ -431,8 +441,7 @@ impl Generator {
             Type::Void => "",
             _ => unreachable!(),
         };
-        let para_list_str =
-            para_type.iter().map(|ty| format!("{}", ty.to_koopa_type_str())).reduce(|l, r| format!("{l}, {r}")).unwrap_or_default();
+        let para_list_str = para_type.iter().map(|ty| format!("{}", ty.to_koopa_type_str())).collect::<Vec<_>>().join(", ");
         format!("decl @{id}({para_list_str}){ret_type_str}\n")
     }
     fn fun_def(&mut self, id: String, ret_type: Type, para_type: Vec<Type>, para_id: Vec<String>, block: Block) -> String {
@@ -445,8 +454,8 @@ impl Generator {
             .iter()
             .zip(para_type.iter())
             .map(|(id, ty)| format!("@{id}: {}", ty.to_koopa_type_str()))
-            .reduce(|l, r| format!("{l}, {r}"))
-            .unwrap_or_default();
+            .collect::<Vec<_>>()
+            .join(", ");
         let entry_id = self.counter.get();
         let para_alloc: String = para_id
             .into_iter()
@@ -485,8 +494,8 @@ impl Generator {
                 InitListItem::InitList(l) => Self::init_list_to_str(&len[1..], *l),
                 InitListItem::Expr(e) => e.get_num().to_string(),
             })
-            .reduce(|l, r| format!("{l}, {r}"))
-            .unwrap_or_default();
+            .collect::<Vec<_>>()
+            .join(", ");
         format!("{{{content}}}")
     }
     fn const_init_list_to_str(len: &[usize], list: ConstInitList) -> String {
@@ -496,8 +505,8 @@ impl Generator {
                 ConstInitListItem::ConstInitList(l) => Self::const_init_list_to_str(&len[1..], *l),
                 ConstInitListItem::Num(i) => i.to_string(),
             })
-            .reduce(|l, r| format!("{l}, {r}"))
-            .unwrap_or_default();
+            .collect::<Vec<_>>()
+            .join(", ");
         format!("{{{content}}}")
     }
     fn global_def(&mut self, def: Definition) -> String {
