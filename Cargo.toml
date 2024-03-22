@@ -5,5 +5,6 @@ edition = "2021"
 
 [dependencies]
 koopa = "0.0.7"
-pest = "2.7.7"
-pest_derive = "2.7.7"
+pest = "2.7.8"
+pest_derive = "2.7.8"
+generator = "0.8"

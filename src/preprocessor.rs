@@ -1,102 +1,109 @@
-enum State {
-    Code,
-    CodeWithBackSlash,
-    CodeWithSlash,
-    StringLiteral,
-    StringLiteralWithEscape,
-    Comment,
-    CxxComment,
-    CxxCommentWithBackSlash,
-    CommentWithStar,
-}
+use generator::{done, Gn};
 
-use State::*;
-
-fn code_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '/' => (CodeWithSlash, None, None),
-        '\\' => (CodeWithBackSlash, None, None),
-        '"' => (StringLiteral, Some(c), None),
-        _ => (Code, Some(c), None),
-    }
-}
-fn code_with_back_slash_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '\\' => (CodeWithBackSlash, Some('\\'), None),
-        '\n' => (Code, None, None),
-        _ => (Code, Some('\\'), Some(c)),
-    }
-}
-fn code_with_slash_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '/' => (CxxComment, None, None),
-        '*' => (Comment, None, None),
-        _ => (Code, Some('/'), Some(c)),
-    }
-}
-fn string_literal_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '\\' => (StringLiteralWithEscape, None, None),
-        '"' => (Code, Some(c), None),
-        _ => (StringLiteral, Some(c), None),
-    }
-}
-fn string_literal_with_escape_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '\n' => (StringLiteral, None, None),
-        _ => (StringLiteral, Some('\\'), Some(c)),
-    }
-}
-fn comment_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '*' => (CommentWithStar, None, None),
-        _ => (Comment, None, None),
-    }
-}
-fn cxx_comment_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '\n' => (Code, Some(c), None),
-        '\\' => (CxxCommentWithBackSlash, None, None),
-        _ => (CxxComment, None, None),
-    }
-}
-fn cxx_comment_with_back_slash_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '\\' => (CxxCommentWithBackSlash, None, None),
-        _ => (CxxComment, None, None),
-    }
-}
-fn comment_with_star_fun(c: char) -> (State, Option<char>, Option<char>) {
-    match c {
-        '/' => (Code, Some(' '), None),
-        '*' => (CommentWithStar, None, None),
-        _ => (Comment, None, None),
-    }
-}
-
-pub fn preprocess(code: &str) -> String {
-    let mut new_code = String::new();
-    let mut state = Code;
-    let mut new_char_1: Option<char>;
-    let mut new_char_2: Option<char>;
-    for c in code.chars() {
-        (state, new_char_1, new_char_2) = match state {
-            Code => code_fun(c),
-            CodeWithSlash => code_with_slash_fun(c),
-            CodeWithBackSlash => code_with_back_slash_fun(c),
-            Comment => comment_fun(c),
-            CxxComment => cxx_comment_fun(c),
-            CommentWithStar => comment_with_star_fun(c),
-            StringLiteral => string_literal_fun(c),
-            StringLiteralWithEscape => string_literal_with_escape_fun(c),
-            CxxCommentWithBackSlash => cxx_comment_with_back_slash_fun(c),
-        };
-        if let Some(new_char) = new_char_1 {
-            new_code.push(new_char);
+pub fn preprocess(code: String) -> String {
+    let remove_cr = Gn::new_scoped(move |mut s| {
+        enum RmCrState {
+            Normal,
+            Cr,
         }
-        if let Some(new_char) = new_char_2 {
-            new_code.push(new_char);
+        use RmCrState::*;
+        let mut state = Normal;
+        for c in code.chars() {
+            match (&state, c) {
+                (Normal, '\r') => state = Cr,
+                (Normal, _) => { s.yield_(c); }
+                (Cr, '\n') => {
+                    state = Normal;
+                    s.yield_('\n');
+                }
+                (Cr, '\r') => { s.yield_('\n'); }
+                (Cr, _) => {
+                    state = Normal;
+                    s.yield_('\n');
+                    s.yield_(c);
+                }
+            }
         }
-    }
-    new_code
+        if let Cr = state { s.yield_('\r'); }
+        done!()
+    });
+    let phy_line_to_logical_line = Gn::new_scoped(move |mut s| {
+        enum P2LState {
+            Normal,
+            Backslash,
+        }
+        use P2LState::*;
+        let mut state = Normal;
+        for c in remove_cr {
+            match (&state, c) {
+                (Normal, '\\') => state = Backslash,
+                (Normal, _) => { s.yield_(c); }
+                (Backslash, '\n') => state = Normal,
+                (Backslash, '\\') => { s.yield_('\\'); }
+                (Backslash, _) => {
+                    state = Normal;
+                    s.yield_('\\');
+                    s.yield_(c);
+                }
+            }
+        }
+        if let Backslash = state { s.yield_('\\'); }
+        done!()
+    });
+    let remove_comments = Gn::new_scoped(move |mut s| {
+        enum State {
+            Code,
+            CodeWithSlash,
+            StringLiteral,
+            StringLiteralWithEscape,
+            Comment,
+            CxxComment,
+            CommentWithStar,
+        }
+        use State::*;
+        let mut state = Code;
+        for c in phy_line_to_logical_line {
+            match (&state, c) {
+                (Code, '/') => state = CodeWithSlash,
+                (Code, '"') => {
+                    state = StringLiteral;
+                    s.yield_('"');
+                }
+                (Code, _) => { s.yield_(c); }
+                (CodeWithSlash, '/') => state = CxxComment,
+                (CodeWithSlash, '*') => state = Comment,
+                (CodeWithSlash, _) => {
+                    state = Code;
+                    s.yield_('/');
+                    s.yield_(c);
+                }
+                (StringLiteral, '\\') => state = StringLiteralWithEscape,
+                (StringLiteral, '"') => {
+                    state = Code;
+                    s.yield_('"');
+                }
+                (StringLiteral, _) => { s.yield_(c); }
+                (StringLiteralWithEscape, _) => {
+                    state = StringLiteral;
+                    s.yield_('\\');
+                    s.yield_(c);
+                }
+                (Comment, '*') => state = CommentWithStar,
+                (Comment, _) => (),
+                (CommentWithStar, '/') => {
+                    state = Code;
+                    s.yield_(' ');
+                }
+                (CommentWithStar, '*') => (),
+                (CommentWithStar, _) => state = Comment,
+                (CxxComment, '\n') => {
+                    state = Code;
+                    s.yield_('\n');
+                }
+                (CxxComment, _) => (),
+            }
+        }
+        done!()
+    });
+    remove_comments.collect()
 }
