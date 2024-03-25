@@ -44,13 +44,11 @@ impl Generator {
         }
         let mut v_2 = Vec::new();
         for i in 0..v.len() - 1 {
+            v_2.push(format!("{}\n", v[i]));
             if (v[i].starts_with("    jump") || v[i].starts_with("    ret") || v[i].starts_with("    br"))
                 && (v[i + 1].chars().last().unwrap() != ':' && v[i + 1] != "}")
             {
-                v_2.push(format!("{}\n", v[i]));
                 v_2.push(format!("{}:\n", self.counter.get()));
-            } else {
-                v_2.push(format!("{}\n", v[i]));
             }
         }
         v_2.push(format!("{}\n", v.last().unwrap()));
@@ -62,18 +60,12 @@ impl Generator {
             } else if v_2[i].ends_with(") {\n") {
                 flag = false;
             }
+            v_3.push(&v_2[i]);
             if !(v_2[i].starts_with("    jump") || v_2[i].starts_with("    ret") || v_2[i].starts_with("    br"))
                 && !v_2[i].ends_with("{\n")
                 && (v_2[i + 1] == "}\n" || v_2[i + 1].ends_with(":\n"))
             {
-                v_3.push(&v_2[i]);
-                if flag {
-                    v_3.push("    ret 0\n");
-                } else {
-                    v_3.push("    ret\n");
-                }
-            } else {
-                v_3.push(&v_2[i]);
+                v_3.push(if flag { "    ret 0\n" } else { "    ret\n" });
             }
         }
         v_3.push(v_2.last().unwrap());
