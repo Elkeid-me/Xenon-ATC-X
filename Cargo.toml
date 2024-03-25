@@ -1,0 +1,11 @@
+[package]
+name = "xenon-atc-x"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+koopa = "0.0.7"
+pest = "^2.7"
+pest_derive = "^2.7"
+generator = "^0.8"
+rustc-hash = "^2.0"

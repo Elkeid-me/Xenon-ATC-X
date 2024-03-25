@@ -1,0 +1,10 @@
+/target
+/test
+rustfmt.toml
+Cargo.lock
+/doc/*.aux
+/doc/*.log
+/doc/*.out
+/doc/*.pdf
+/doc/*.synctex.gz
+/doc/_minted*
