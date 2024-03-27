@@ -15,81 +15,58 @@
 // You should have received a copy of the GNU General Public License
 // along with Xenon ATC-X.  If not, see <http://www.gnu.org/licenses/>.
 
-pub type TranslationUnit = Vec<Box<GlobalItem>>;
+use super::ty::Type;
+type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 
-#[derive(Debug)]
-pub enum GlobalItem {
-    Def(Definition),
-    FuncDef {
-        return_void: bool,
-        id: String,
-        parameter_list: Vec<Parameter>,
-        block: Block,
-    },
+pub type Handler = usize;
+
+pub struct TranslationUnit {
+    pub ast: Vec<Definition>,
+    pub types: HashMap<Handler, Type>,
+    pub inits: HashMap<Handler, Option<Init>>,
 }
 
-#[derive(Debug)]
-pub enum Parameter {
-    Int(String),
-    PointerTmp(String, Vec<Expr>),
-    Pointer(String, Vec<usize>),
+pub type Definition = (Handler, String);
+
+/// # 初始化器
+/// - [`Init::Function`] 是二元组，前者为每个形参的重整化后名字，后者为函数体.
+/// - [`Init::Expr`]，表示这个变量使用一个表达式初始化，即这是一个整型变量.
+/// - [`Init::Const`]，表示这个变量使用一个整型常量初始化，即这是一个整型常量.
+/// - [`Init::ConstList`] 和 [`Init::List`] 同理.
+pub enum Init {
+    Function(Vec<Option<String>>, Block),
+    Expr(Expr),
+    Const(i32),
+    List(InitList),
+    ConstList(ConstInitList),
 }
 
-#[derive(Debug)]
-pub enum Definition {
-    ConstVariableDefTmp(String, Expr),
-    ConstVariableDef(String, i32),
-    ConstArrayDefTmp {
-        id: String,
-        lengths: Vec<Expr>,
-        init_list: InitList,
-    },
-    ConstArrayDef {
-        id: String,
-        lengths: Vec<usize>,
-        init_list: ConstInitList,
-    },
-    VariableDef(String, Option<Expr>),
-    ArrayDefTmp {
-        id: String,
-        lengths: Vec<Expr>,
-        init_list: Option<InitList>,
-    },
-    ArrayDef {
-        id: String,
-        lengths: Vec<usize>,
-        init_list: Option<InitList>,
-    },
+impl Default for Init {
+    fn default() -> Self {
+        Self::Const(0)
+    }
 }
 
-pub type InitList = Vec<InitListItem>;
-
-#[derive(Debug)]
+#[derive(Clone)]
 pub enum InitListItem {
     InitList(Box<InitList>),
     Expr(Expr),
 }
 
-pub type ConstInitList = Vec<ConstInitListItem>;
+pub type InitList = Vec<InitListItem>;
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub enum ConstInitListItem {
-    InitList(Box<ConstInitList>),
+    ConstInitList(Box<ConstInitList>),
     Num(i32),
 }
 
-#[derive(Debug)]
+pub type ConstInitList = Vec<ConstInitListItem>;
+
 pub enum Statement {
     Expr(Expr),
-    If {
-        condition: Expr,
-        then_block: Box<Block>,
-        else_block: Box<Block>,
-    },
-    While {
-        condition: Expr,
-        block: Box<Block>,
-    },
+    If(Expr, Box<Block>, Box<Block>),
+    While(Expr, Box<Block>),
     Return(Option<Expr>),
     Break,
     Continue,
@@ -97,120 +74,93 @@ pub enum Statement {
 
 pub type Block = Vec<BlockItem>;
 
-#[derive(Debug)]
 pub enum BlockItem {
-    Def(Box<Definition>),
-    Block(Box<Block>),
-    Statement(Box<Statement>),
+    Def(Definition),
+    Block(Block),
+    Statement(Statement),
 }
 
-#[derive(Debug)]
-pub enum AssignOp {
-    Assignment,
-    AddAssign,
-    SubtractAssign,
-    MultiplyAssign,
-    BitAndAssign,
-    BitOrAssign,
-    BitXorAssign,
-    BitLeftShiftAssign,
-    BitRightShiftAssign,
-}
+#[derive(Debug, Clone)]
+pub enum Expr {
+    Mul(Box<Expr>, Box<Expr>),
+    Div(Box<Expr>, Box<Expr>),
+    Mod(Box<Expr>, Box<Expr>),
+    Add(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr>, Box<Expr>),
 
-#[derive(Debug)]
-pub enum ArithmeticOp {
-    Multiply,
-    Divide,
-    Modulus,
-    Add,
-    Subtract,
+    ShL(Box<Expr>, Box<Expr>),
+    ShR(Box<Expr>, Box<Expr>),
+    Xor(Box<Expr>, Box<Expr>),
+    And(Box<Expr>, Box<Expr>),
+    Or(Box<Expr>, Box<Expr>),
 
-    BitLeftShift,
-    BitRightShift,
-    BirXor,
-    BitAnd,
-    BitOr,
+    Eq(Box<Expr>, Box<Expr>),
+    Neq(Box<Expr>, Box<Expr>),
+    Grt(Box<Expr>, Box<Expr>),
+    Geq(Box<Expr>, Box<Expr>),
+    Les(Box<Expr>, Box<Expr>),
+    Leq(Box<Expr>, Box<Expr>),
 
-    Equal,
-    NotEqual,
-    Greater,
-    GreaterOrEqual,
-    Less,
-    LessOrEqual,
-}
+    LogicAnd(Box<Expr>, Box<Expr>),
+    LogicOr(Box<Expr>, Box<Expr>),
 
-#[derive(Debug)]
-pub enum LogicOp {
-    LogicalAnd,
-    LogicalOr,
-}
+    LogicNot(Box<Expr>),
+    Nega(Box<Expr>),
+    Not(Box<Expr>),
 
-#[derive(Debug)]
-pub enum InfixOp {
-    Assign(AssignOp),
-    Arith(ArithmeticOp),
-    Logic(LogicOp),
-}
+    PostInc(Box<Expr>),
+    PostDec(Box<Expr>),
+    PreInc(Box<Expr>),
+    PreDec(Box<Expr>),
 
-#[derive(Debug)]
-pub enum ArithmeticUnaryOp {
-    LogicalNot,
-    Negative,
-    BitNot,
-}
-
-#[derive(Debug)]
-pub enum OtherUnaryOp {
-    PostfixSelfIncrease,
-    PostfixSelfDecrease,
-    PrefixSelfIncrease,
-    PrefixSelfDecrease,
-}
-
-#[derive(Debug)]
-pub enum UnaryOp {
-    ArithUnary(ArithmeticUnaryOp),
-    Others(OtherUnaryOp),
-}
-
-#[derive(Debug)]
-pub enum ExprInner {
-    InfixExpr(Box<Expr>, InfixOp, Box<Expr>),
-    UnaryExpr(UnaryOp, Box<Expr>),
+    Assignment(Box<Expr>, Box<Expr>),
+    AddAssign(Box<Expr>, Box<Expr>),
+    SubAssign(Box<Expr>, Box<Expr>),
+    MulAssign(Box<Expr>, Box<Expr>),
+    DivAssign(Box<Expr>, Box<Expr>),
+    ModAssign(Box<Expr>, Box<Expr>),
+    AndAssign(Box<Expr>, Box<Expr>),
+    OrAssign(Box<Expr>, Box<Expr>),
+    XorAssign(Box<Expr>, Box<Expr>),
+    ShLAssign(Box<Expr>, Box<Expr>),
+    SaRAssign(Box<Expr>, Box<Expr>),
 
     Num(i32),
-    Identifier(String),
-    FunctionCall(String, Vec<Expr>),
-    ArrayElement(String, Vec<Expr>, bool),
+    Var(String),
+    Func(String, Vec<Expr>),
+    Array(String, Vec<Expr>, bool),
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum SimpleType {
-    Int,
-    Pointer,
-    Void,
+#[derive(Clone, Copy)]
+pub enum ExprCategory {
+    LValue,
+    RValue,
 }
 
-#[derive(Debug)]
-pub struct Expr {
-    pub inner: ExprInner,
-    pub type_: SimpleType,
+#[derive(Clone, Copy)]
+pub enum ExprConst {
+    ConstEval,
+    NonConst,
 }
 
-impl From<ExprInner> for Expr {
-    fn from(inner: ExprInner) -> Self {
-        Self {
-            inner,
-            type_: SimpleType::Void,
+impl Expr {
+    pub fn get_num(&self) -> i32 {
+        match self {
+            Self::Num(i) => *i,
+            _ => unreachable!(),
         }
     }
 }
 
-impl Default for Expr {
-    fn default() -> Self {
-        Self {
-            inner: ExprInner::Num(0),
-            type_: SimpleType::Void,
+impl std::ops::BitAnd for ExprConst {
+    type Output = ExprConst;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::ConstEval, Self::ConstEval) => Self::ConstEval,
+            (Self::ConstEval, Self::NonConst) | (Self::NonConst, Self::ConstEval) | (Self::NonConst, Self::NonConst) => {
+                Self::NonConst
+            }
         }
     }
 }
