@@ -1,14 +1,14 @@
 use std::env::Args;
 
-pub enum Mode {
+pub(super) enum Mode {
     Koopa,
     RiscV,
     Optimization,
 }
 
-pub type ParsedArgs = (Mode, String, String);
+pub(super) type ParsedArgs = (Mode, String, String);
 
-pub fn parse(mut args: Args) -> Result<ParsedArgs, String> {
+pub(super) fn parse(mut args: Args) -> Result<ParsedArgs, String> {
     let args = &mut args;
     let mode = match args.skip(1).next().unwrap().as_str() {
         "-koopa" => Ok(Mode::Koopa),

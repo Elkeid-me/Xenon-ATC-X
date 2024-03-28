@@ -1,7 +1,7 @@
 use super::ty::Type;
 
-pub type TranslationUnit = Vec<Definition>;
-pub type Definition = (Type, String, Option<Init>);
+pub(super) type TranslationUnit = Vec<Definition>;
+pub(super) type Definition = (Type, String, Option<Init>);
 
 /// # 初始化器
 /// - [`Init::Function`] 是二元组，前者为每个形参的重整化后名字，后者为函数体.
@@ -9,7 +9,7 @@ pub type Definition = (Type, String, Option<Init>);
 /// - [`Init::Const`]，表示这个变量使用一个整型常量初始化，即这是一个整型常量.
 /// - [`Init::ConstInitList`] 和 [`Init::InitList`] 同理.
 #[derive(Debug)]
-pub enum Init {
+pub(super) enum Init {
     Function(Vec<String>, Block),
     Expr(Expr),
     Const(i32),
@@ -18,23 +18,23 @@ pub enum Init {
 }
 
 #[derive(Debug, Clone)]
-pub enum InitListItem {
+pub(super) enum InitListItem {
     InitList(Box<InitList>),
     Expr(Expr),
 }
 
-pub type InitList = Vec<InitListItem>;
+pub(super) type InitList = Vec<InitListItem>;
 
 #[derive(Debug, Clone)]
-pub enum ConstInitListItem {
+pub(super) enum ConstInitListItem {
     ConstInitList(Box<ConstInitList>),
     Num(i32),
 }
 
-pub type ConstInitList = Vec<ConstInitListItem>;
+pub(super) type ConstInitList = Vec<ConstInitListItem>;
 
 #[derive(Debug)]
-pub enum Statement {
+pub(super) enum Statement {
     Expr(Expr),
     If(Expr, Box<Block>, Box<Block>),
     While(Expr, Box<Block>),
@@ -43,17 +43,17 @@ pub enum Statement {
     Continue,
 }
 
-pub type Block = Vec<BlockItem>;
+pub(super) type Block = Vec<BlockItem>;
 
 #[derive(Debug)]
-pub enum BlockItem {
+pub(super) enum BlockItem {
     Def(Definition),
     Block(Block),
     Statement(Statement),
 }
 
 #[derive(Debug, Clone)]
-pub enum Expr {
+pub(super) enum Expr {
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
     Mod(Box<Expr>, Box<Expr>),
@@ -104,19 +104,19 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ExprCategory {
+pub(super) enum ExprCategory {
     LValue,
     RValue,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ExprConst {
+pub(super) enum ExprConst {
     ConstEval,
     NonConst,
 }
 
 impl Expr {
-    pub fn get_num(&self) -> i32 {
+    pub(super) fn get_num(&self) -> i32 {
         match self {
             Expr::Num(i) => *i,
             _ => unreachable!(),

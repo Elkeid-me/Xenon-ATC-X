@@ -97,7 +97,7 @@ impl ASTBuilder {
     }
 
     // 返回值：表达式的值类型、是否为可修改左值、是否为整型常量表达式
-    pub fn expr_check(&self, expr: &Expr) -> Result<(RefType, ExprCategory, ExprConst), String> {
+    pub(super) fn expr_check(&self, expr: &Expr) -> Result<(RefType, ExprCategory, ExprConst), String> {
         match expr {
             Mul(l, r)
             | Div(l, r)
@@ -215,7 +215,7 @@ impl ASTBuilder {
         }
     }
 
-    pub fn expr_type(&self, expr: &Expr) -> Result<RefType, String> {
+    pub(super) fn expr_type(&self, expr: &Expr) -> Result<RefType, String> {
         Ok(self.expr_check(expr)?.0)
     }
 
@@ -518,14 +518,14 @@ impl ASTBuilder {
         }
     }
 
-    pub fn process_expr_impl(&self, expr: Pair<Rule>) -> Result<(Expr, RefType, ExprConst), String> {
+    pub(super) fn process_expr_impl(&self, expr: Pair<Rule>) -> Result<(Expr, RefType, ExprConst), String> {
         let expr = self.parse_expr(expr);
         let (ty, _, is_const) = self.expr_check(&expr)?;
         let (expr, _, _) = self.simplify(expr);
         Ok((expr, ty, is_const))
     }
 
-    pub fn process_expr(&self, expr: Pair<Rule>) -> Result<Expr, String> {
+    pub(super) fn process_expr(&self, expr: Pair<Rule>) -> Result<Expr, String> {
         let (expr, _, _) = self.process_expr_impl(expr)?;
         Ok(expr)
     }

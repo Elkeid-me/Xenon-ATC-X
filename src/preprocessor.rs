@@ -1,6 +1,6 @@
 use generator::{done, Gn};
 
-pub fn preprocess(code: String) -> String {
+pub(super) fn preprocess(code: String) -> String {
     let remove_cr = Gn::new_scoped(move |mut s| {
         enum RmCrState {
             Normal,
