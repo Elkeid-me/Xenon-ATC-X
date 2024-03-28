@@ -6,5 +6,6 @@ Cargo.lock
 /doc/*.log
 /doc/*.out
 /doc/*.pdf
+/doc/*.toc
 /doc/*.synctex.gz
 /doc/_minted*
