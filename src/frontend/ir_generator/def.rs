@@ -1,0 +1,143 @@
+use super::super::{ast::*, ty::Type};
+use super::Generator;
+use crate::risk;
+
+impl Generator {
+    pub(super) fn fun_decl(&self, id: String, ret_type: Type, para_type: Vec<Type>) -> String {
+        let ret_type_str = match ret_type {
+            Type::Int => ": i32",
+            Type::Void => "",
+            _ => unreachable!(),
+        };
+        let para_list_str = para_type.iter().map(|ty| format!("{}", ty.to_koopa_type_str())).collect::<Vec<_>>().join(", ");
+        format!("decl @{id}({para_list_str}){ret_type_str}\n")
+    }
+    pub(super) fn fun_def(
+        &mut self,
+        id: String,
+        ret_type: Type,
+        para_type: Vec<Type>,
+        para_id: Vec<String>,
+        block: Block,
+    ) -> String {
+        let ret_type_str = match ret_type {
+            Type::Int => ": i32",
+            Type::Void => "",
+            _ => unreachable!(),
+        };
+        let para_list_str = para_id
+            .iter()
+            .zip(para_type.iter())
+            .map(|(id, ty)| format!("@{id}: {}", ty.to_koopa_type_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let entry_id = self.counter.get();
+        let para_alloc: String = para_id
+            .into_iter()
+            .zip(para_type.into_iter())
+            .map(|(id, ty)| format!("    %{} = alloc {}\n    store @{}, %{}\n", id, ty.to_koopa_type_str(), id, id))
+            .collect();
+        let (block, _) = self.block(block, "", "");
+        format!("fun @{id}({para_list_str}){ret_type_str} {{\n{entry_id}:\n{para_alloc}\n{block}\n}}\n")
+    }
+    pub(super) fn def(&mut self, def: Definition) -> String {
+        match def {
+            (Type::Int, id, None) => format!("    %{id} = alloc i32\n"),
+            (Type::Int, _, Some(Init::Const(_))) => String::new(),
+            (Type::Int, id, Some(Init::Expr(expr))) => {
+                let (expr_eval, expr_id) = self.expr_rvalue(expr);
+                format!("{expr_eval}    %{id} = alloc i32\n    store {expr_id}, %{id}\n")
+            }
+            (Type::IntArray(len), id, Some(Init::ConstInitList(list))) => {
+                let init_str = Self::const_init_list_to_str(&len, list);
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                self.global_const_init.push(format!("global %{id} = alloc {ty_str}, {init_str}\n"));
+                String::new()
+            }
+            (Type::IntArray(len), id, Some(Init::InitList(list))) => self.local_array(Type::IntArray(len), id, list),
+            (Type::IntArray(len), id, None) => {
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                format!("    %{} = alloc {}\n", id, ty_str)
+            }
+            _ => unimplemented!(),
+        }
+    }
+    pub(super) fn init_list_to_str(len: &[usize], list: InitList) -> String {
+        let content = list
+            .into_iter()
+            .map(|item| match item {
+                InitListItem::InitList(l) => Self::init_list_to_str(&len[1..], *l),
+                InitListItem::Expr(e) => e.get_num().to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{{{content}}}")
+    }
+    pub(super) fn const_init_list_to_str(len: &[usize], list: ConstInitList) -> String {
+        let content = list
+            .into_iter()
+            .map(|item| match item {
+                ConstInitListItem::ConstInitList(l) => Self::const_init_list_to_str(&len[1..], *l),
+                ConstInitListItem::Num(i) => i.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{{{content}}}")
+    }
+    pub(super) fn global_def(&mut self, def: Definition) -> String {
+        match def {
+            (Type::Function(ret_type, para_type), id, Some(Init::Function(para_id, block))) => {
+                self.fun_def(id, *ret_type, para_type, para_id, block)
+            }
+            (Type::Function(ret_type, para_type), id, None) => self.fun_decl(id, *ret_type, para_type),
+            (Type::Int, id, None) => format!("global %{id} = alloc i32, 0\n"),
+            (Type::Int, id, Some(Init::Expr(expr))) => {
+                let (expr_eval, expr_id) = self.expr_rvalue(expr);
+                format!("{expr_eval}global %{id} = alloc i32, {expr_id}\n")
+            }
+            (Type::IntArray(len), id, None) => {
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                format!("global %{id} = alloc {ty_str}, zeroinit\n")
+            }
+            (Type::IntArray(len), id, Some(Init::InitList(list))) => {
+                let init_str = Self::init_list_to_str(&len, list);
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                format!("global %{id} = alloc {ty_str}, {init_str}\n")
+            }
+            (Type::IntArray(len), id, Some(Init::ConstInitList(list))) => {
+                let init_str = Self::const_init_list_to_str(&len, list);
+                let ty_str = Type::IntArray(len).to_koopa_type_str();
+                format!("global %{id} = alloc {ty_str}, {init_str}\n")
+            }
+            _ => String::new(),
+        }
+    }
+    pub(super) fn local_array_impl(&mut self, len: &[usize], id: &str, list: Vec<InitListItem>) -> String {
+        match len.len() {
+            1 => list
+                .into_iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let (expr_eval, expr_id) = self.expr_rvalue(risk!(item, InitListItem::Expr(expr) => expr));
+                    let tmp_id = self.counter.get();
+                    format!("{expr_eval}    {tmp_id} = getelemptr {id}, {i}\n    store {expr_id}, {tmp_id}\n")
+                })
+                .collect(),
+            _ => list
+                .into_iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let tmp_id = self.counter.get();
+                    let str = self.local_array_impl(&len[1..], &tmp_id, risk!(item, InitListItem::InitList(list) => *list));
+                    format!("    {tmp_id} = getelemptr {id}, {i}\n{str}")
+                })
+                .collect(),
+        }
+    }
+    pub(super) fn local_array(&mut self, ty: Type, id: String, list: Vec<InitListItem>) -> String {
+        let local_id = format!("%{}", id);
+        let alloc = format!("    {} = alloc {}\n", &local_id, ty.to_koopa_type_str());
+        let len = risk!(ty, Type::IntArray(len) => len);
+        format!("{}{}", alloc, self.local_array_impl(&len, &local_id, list))
+    }
+}
