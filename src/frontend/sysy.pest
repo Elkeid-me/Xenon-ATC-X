@@ -54,7 +54,7 @@ positive        =  { "+" }
 bit_not         =  { "~" }
 
 infix  = _{ custom | three_char_operator | two_char_operator | single_char_operator }
-custom = ${ "`" ~ identifier ~ "`" }
+custom = ${ "~" ~ identifier ~ "~" }
 
 single_char_operator = _{ mul | div | modu | add | sub | xor | and | or | grt | les | assignment }
 two_char_operator    = _{ logic_and | logic_or | shl | sar | eq | neq | geq
