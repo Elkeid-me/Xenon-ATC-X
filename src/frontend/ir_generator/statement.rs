@@ -75,7 +75,7 @@ impl Generator {
             }
         }
     }
-    pub(super) fn statement(&mut self, statement: Statement, while_id: &str, while_next_id: &str) -> String {
+    pub fn statement(&mut self, statement: Statement, while_id: &str, while_next_id: &str) -> String {
         match statement {
             Statement::Expr(expr) => self.expr_dvalue(expr),
             Statement::If(condition, then_block, else_block) => {
@@ -93,7 +93,7 @@ impl Generator {
             Statement::Continue => format!("    jump {}\n", while_id),
         }
     }
-    pub(super) fn block(&mut self, block: Block, while_id: &str, while_next_id: &str) -> (String, String) {
+    pub fn block(&mut self, block: Block, while_id: &str, while_next_id: &str) -> (String, String) {
         let id = self.counter.get();
         let body: String = block
             .into_iter()

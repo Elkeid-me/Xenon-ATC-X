@@ -2,20 +2,20 @@ use super::super::ast::Expr::{self, *};
 use super::Generator;
 
 impl Generator {
-    pub(super) fn arith_expr_helper(&mut self, l: Expr, r: Expr, op: &str) -> (String, String) {
+    pub fn arith_expr_helper(&mut self, l: Expr, r: Expr, op: &str) -> (String, String) {
         let id = self.counter.get();
         let (l_eval, l_id) = self.expr_rvalue(l);
         let (r_eval, r_id) = self.expr_rvalue(r);
         (format!("{l_eval}{r_eval}    {id} = {op} {l_id}, {r_id}\n"), id)
     }
 
-    pub(super) fn arith_unary_helper(&mut self, expr: Expr, operate: &str) -> (String, String) {
+    pub fn arith_unary_helper(&mut self, expr: Expr, operate: &str) -> (String, String) {
         let id = self.counter.get();
         let (expr_eval, expr_id) = self.expr_rvalue(expr);
         (format!("{expr_eval}    {id} = {operate}, {expr_id}\n"), id)
     }
 
-    pub(super) fn array_elem_rvalue(&mut self, id: String, subscripts: Vec<Expr>, rvalue_int: bool) -> (String, String) {
+    pub fn array_elem_rvalue(&mut self, id: String, subscripts: Vec<Expr>, rvalue_int: bool) -> (String, String) {
         let (expr_eval, expr_id) = self.array_elem_lvalue(id, subscripts);
         if rvalue_int {
             let tmp_id = self.counter.get();
@@ -26,7 +26,7 @@ impl Generator {
         }
     }
 
-    pub(super) fn expr_rvalue(&mut self, expr: Expr) -> (String, String) {
+    pub fn expr_rvalue(&mut self, expr: Expr) -> (String, String) {
         match expr {
             Mul(l, r) => self.arith_expr_helper(*l, *r, "mul"),
             Div(l, r) => self.arith_expr_helper(*l, *r, "div"),

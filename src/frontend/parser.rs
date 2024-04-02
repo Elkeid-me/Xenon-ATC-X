@@ -16,21 +16,21 @@ struct SysYParser;
 
 // 符号的类型、重整化前的名字、常量初始化器
 #[derive(Debug)]
-pub(super) enum ConstInit {
+pub enum ConstInit {
     Num(i32),
     List(ConstInitList),
 }
 
 #[derive(Debug)]
-pub(super) struct Symbol(pub(super) Type, pub(super) String, pub(super) Option<ConstInit>);
+pub struct Symbol(pub Type, pub String, pub Option<ConstInit>);
 
-pub(super) struct SymbolTable {
+pub struct SymbolTable {
     table: Vec<HashMap<String, Symbol>>,
     global_name_table: HashSet<String>,
     local_name_table: Option<HashSet<String>>,
 }
 
-pub(super) trait Scope {
+pub trait Scope {
     fn search(&self, identifier: &str) -> Option<&Symbol>;
     fn insert_definition(&mut self, id: String, ty: Type, init: Option<ConstInit>) -> Result<String, String>;
     fn enter_scope(&mut self);
@@ -118,9 +118,9 @@ impl Scope for SymbolTable {
         self.local_name_table = None;
     }
 }
-pub(super) struct ASTBuilder {
-    pub(super) expr_parser: PrattParser<Rule>,
-    pub(super) symbol_table: SymbolTable,
+pub struct ASTBuilder {
+    pub expr_parser: PrattParser<Rule>,
+    pub symbol_table: SymbolTable,
 }
 
 trait InitListTrait {
@@ -598,6 +598,6 @@ impl ASTBuilder {
     }
 }
 
-pub(super) fn parse(code: &str) -> Result<TranslationUnit, String> {
+pub fn parse(code: &str) -> Result<TranslationUnit, String> {
     ASTBuilder::new().parse(code)
 }

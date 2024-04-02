@@ -2,7 +2,7 @@ use super::super::ast::Expr::{self, *};
 use super::Generator;
 
 impl Generator {
-    pub(super) fn expr_dvalue(&mut self, expr: Expr) -> String {
+    pub fn expr_dvalue(&mut self, expr: Expr) -> String {
         match expr {
             Mul(l, r)
             | Div(l, r)

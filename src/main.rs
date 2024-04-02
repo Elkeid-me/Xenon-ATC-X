@@ -2,6 +2,7 @@ use std::fs::{read_to_string, File};
 use std::io::Write;
 
 mod arg_parse;
+mod backend;
 mod frontend;
 mod preprocessor;
 
@@ -23,7 +24,7 @@ fn compile() -> Result<(), Box<dyn std::error::Error>> {
     let ir = frontend::generate_ir(&code)?;
     match mode {
         arg_parse::Mode::Koopa => f.write_fmt(format_args!("{ir}"))?,
-        // arg_parse::Mode::RiscV => f.write_fmt(format_args!("{}", backend::generate_asm(ir)))?,
+        arg_parse::Mode::RiscV => f.write_fmt(format_args!("{}", backend::generate_asm(ir)))?,
         _ => todo!(),
     }
     Ok(())

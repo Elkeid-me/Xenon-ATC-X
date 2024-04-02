@@ -96,6 +96,6 @@ impl Generator {
     }
 }
 
-pub(super) fn generator_ir(ast: TranslationUnit) -> String {
+pub fn generator_ir(ast: TranslationUnit) -> String {
     Generator::new().generate(ast)
 }

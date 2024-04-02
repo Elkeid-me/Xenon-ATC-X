@@ -2,7 +2,7 @@ use super::super::ast::Expr::{self, *};
 use super::Generator;
 
 impl Generator {
-    pub(super) fn array_elem_lvalue(&mut self, id: String, subscripts: Vec<Expr>) -> (String, String) {
+    pub fn array_elem_lvalue(&mut self, id: String, subscripts: Vec<Expr>) -> (String, String) {
         match &id[0..2] {
             "_P" => {
                 let tmp_id_0 = self.counter.get();
@@ -43,7 +43,7 @@ impl Generator {
         }
     }
 
-    pub(super) fn expr_lvalue(&mut self, expr: Expr) -> (String, String) {
+    pub fn expr_lvalue(&mut self, expr: Expr) -> (String, String) {
         match expr {
             PreInc(expr) => self.inc_dec_helper(*expr, "add", true, true),
             PreDec(expr) => self.inc_dec_helper(*expr, "sub", true, true),

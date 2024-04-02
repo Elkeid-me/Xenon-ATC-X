@@ -1,15 +1,14 @@
 #[derive(Debug, Clone, Copy)]
-pub(super) enum RefType<'a> {
+pub enum RefType<'a> {
     Int,
     Void,
     Keyword,
     IntPointer(&'a [usize]),
     IntArray(&'a [usize]),
-    Function(&'a Type, &'a [Type]),
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum Type {
+pub enum Type {
     Int,
     Void,
     Keyword,
@@ -19,18 +18,18 @@ pub(super) enum Type {
 }
 
 impl<'a> Type {
-    pub(super) fn to_ref_type(&'a self) -> RefType<'a> {
+    pub fn to_ref_type(&'a self) -> RefType<'a> {
         match self {
             Type::Int => RefType::Int,
             Type::Void => RefType::Void,
             Type::Keyword => RefType::Keyword,
             Type::IntPointer(l) => RefType::IntPointer(l),
             Type::IntArray(l) => RefType::IntArray(l),
-            Type::Function(ret, para) => RefType::Function(ret, para),
+            _ => unreachable!(),
         }
     }
 
-    pub(super) fn to_koopa_type_str(&self) -> String {
+    pub fn to_koopa_type_str(&self) -> String {
         match self {
             Type::Int => "i32".to_string(),
             Type::IntPointer(len) => {

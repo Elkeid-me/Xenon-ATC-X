@@ -3,7 +3,7 @@ use super::Generator;
 use crate::risk;
 
 impl Generator {
-    pub(super) fn fun_decl(&self, id: String, ret_type: Type, para_type: Vec<Type>) -> String {
+    pub fn fun_decl(&self, id: String, ret_type: Type, para_type: Vec<Type>) -> String {
         let ret_type_str = match ret_type {
             Type::Int => ": i32",
             Type::Void => "",
@@ -12,7 +12,7 @@ impl Generator {
         let para_list_str = para_type.iter().map(|ty| format!("{}", ty.to_koopa_type_str())).collect::<Vec<_>>().join(", ");
         format!("decl @{id}({para_list_str}){ret_type_str}\n")
     }
-    pub(super) fn fun_def(
+    pub fn fun_def(
         &mut self,
         id: String,
         ret_type: Type,
@@ -40,7 +40,7 @@ impl Generator {
         let (block, _) = self.block(block, "", "");
         format!("fun @{id}({para_list_str}){ret_type_str} {{\n{entry_id}:\n{para_alloc}\n{block}\n}}\n")
     }
-    pub(super) fn def(&mut self, def: Definition) -> String {
+    pub fn def(&mut self, def: Definition) -> String {
         match def {
             (Type::Int, id, None) => format!("    %{id} = alloc i32\n"),
             (Type::Int, _, Some(Init::Const(_))) => String::new(),
@@ -62,7 +62,7 @@ impl Generator {
             _ => unimplemented!(),
         }
     }
-    pub(super) fn init_list_to_str(len: &[usize], list: InitList) -> String {
+    pub fn init_list_to_str(len: &[usize], list: InitList) -> String {
         let content = list
             .into_iter()
             .map(|item| match item {
@@ -73,7 +73,7 @@ impl Generator {
             .join(", ");
         format!("{{{content}}}")
     }
-    pub(super) fn const_init_list_to_str(len: &[usize], list: ConstInitList) -> String {
+    pub fn const_init_list_to_str(len: &[usize], list: ConstInitList) -> String {
         let content = list
             .into_iter()
             .map(|item| match item {
@@ -84,7 +84,7 @@ impl Generator {
             .join(", ");
         format!("{{{content}}}")
     }
-    pub(super) fn global_def(&mut self, def: Definition) -> String {
+    pub fn global_def(&mut self, def: Definition) -> String {
         match def {
             (Type::Function(ret_type, para_type), id, Some(Init::Function(para_id, block))) => {
                 self.fun_def(id, *ret_type, para_type, para_id, block)
@@ -112,7 +112,7 @@ impl Generator {
             _ => String::new(),
         }
     }
-    pub(super) fn local_array_impl(&mut self, len: &[usize], id: &str, list: Vec<InitListItem>) -> String {
+    pub fn local_array_impl(&mut self, len: &[usize], id: &str, list: Vec<InitListItem>) -> String {
         match len.len() {
             1 => list
                 .into_iter()
@@ -134,7 +134,7 @@ impl Generator {
                 .collect(),
         }
     }
-    pub(super) fn local_array(&mut self, ty: Type, id: String, list: Vec<InitListItem>) -> String {
+    pub fn local_array(&mut self, ty: Type, id: String, list: Vec<InitListItem>) -> String {
         let local_id = format!("%{}", id);
         let alloc = format!("    {} = alloc {}\n", &local_id, ty.to_koopa_type_str());
         let len = risk!(ty, Type::IntArray(len) => len);
