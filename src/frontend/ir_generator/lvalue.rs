@@ -45,12 +45,12 @@ impl Generator {
 
     pub fn expr_lvalue(&mut self, expr: Expr) -> (String, String) {
         match expr {
-            PreInc(expr) => self.inc_dec_helper(*expr, "add", true, true),
-            PreDec(expr) => self.inc_dec_helper(*expr, "sub", true, true),
+            PreInc(expr) => self.inc_dec_helper(*expr, "add", true, false),
+            PreDec(expr) => self.inc_dec_helper(*expr, "sub", true, false),
             Assignment(l, r) => {
-                let (r_eval, r_id) = self.expr_rvalue(*r);
+                let r_eval = self.expr_dvalue(*r);
                 let (l_eval, l_id) = self.expr_lvalue(*l);
-                (format!("{r_eval}{l_eval}    store {r_id}, {l_id}\n"), l_id)
+                (format!("{r_eval}{l_eval}\n"), l_id)
             }
             AddAssign(l, r) => self.assign_expr_helper(*l, *r, "add", false),
             SubAssign(l, r) => self.assign_expr_helper(*l, *r, "sub", false),

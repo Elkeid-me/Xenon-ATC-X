@@ -77,20 +77,26 @@ impl Generator {
         format!("{global}{ir}")
     }
     fn assign_expr_helper(&mut self, l: Expr, r: Expr, op: &str, rvalue: bool) -> (String, String) {
-        let (r_eval, r_id) = self.expr_rvalue(r);
-        let (l_eval, l_id) = self.expr_lvalue(l);
-        let tmp_id_1 = self.counter.get();
-        let tmp_id_2 = self.counter.get();
-        (format!("{r_eval}{l_eval}    {tmp_id_1} = load {l_id}\n    {tmp_id_2} = {op} {tmp_id_1}, {r_id}\n   store {tmp_id_2}, {l_id}\n"), if rvalue { tmp_id_2 } else { l_id })
+        if rvalue {
+            let (r_eval, r_id) = self.expr_rvalue(r);
+            let (l_eval, l_id) = self.expr_lvalue(l);
+            let tmp_id_1 = self.counter.get();
+            let tmp_id_2 = self.counter.get();
+            (format!("{r_eval}{l_eval}    {tmp_id_1} = load {l_id}\n    {tmp_id_2} = {op} {tmp_id_1}, {r_id}\n   store {tmp_id_2}, {l_id}\n"), tmp_id_2)
+        } else {
+            let r_eval = self.expr_dvalue(r);
+            let (l_eval, l_id) = self.expr_lvalue(l);
+            (format!("{r_eval}{l_eval}\n"), l_id)
+        }
     }
     fn inc_dec_helper(&mut self, expr: Expr, op: &str, prefix: bool, rvalue: bool) -> (String, String) {
         let (expr_eval, expr_id) = self.expr_lvalue(expr);
         let tmp_id_1 = self.counter.get();
         let tmp_id_2 = self.counter.get();
         match (rvalue, prefix) {
-            (true, true) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_2),
-            (true, false) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), tmp_id_1),
-            (false, true) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}"), expr_id),
+            (true, true) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}\n"), tmp_id_2),
+            (true, false) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}\n"), tmp_id_1),
+            (false, true) => (format!("{expr_eval}\n"), expr_id),
             (false, false) => unreachable!()
         }
     }
