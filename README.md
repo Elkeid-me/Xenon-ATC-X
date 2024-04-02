@@ -12,7 +12,7 @@ Xenon 已被废弃，Xenon ATC-X 是其后继项目. ATC-X = Advanced Technology
     int main()
     {
         int x = 2, y = 2;
-        return x `f` y; // 等价于 return f(x, y);
+        return x ~f~ y; // 等价于 return f(x, y);
     }
     ```
 2. 各类复合赋值运算符，如 `+=`，`*=`.

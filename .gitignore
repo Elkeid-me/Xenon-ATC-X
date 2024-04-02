@@ -6,3 +6,4 @@ rustfmt.toml
 /doc/*.out
 /doc/*.pdf
 /doc/*.synctex.gz
+/doc/_minted*
