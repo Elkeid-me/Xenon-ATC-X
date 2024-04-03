@@ -1,6 +1,6 @@
-use super::ast::{Expr::*, ExprCategory::*, ExprConst::*, *};
-use super::parser::{ASTBuilder, ConstInit, Rule, Scope, Symbol};
-use super::ty::*;
+use crate::frontend::ast::{Expr::*, ExprCategory::*, ExprConst::*, *};
+use crate::frontend::parser::{ASTBuilder, ConstInit, Rule, Scope, Symbol};
+use crate::frontend::ty::*;
 use crate::risk;
 use pest::iterators::Pair;
 

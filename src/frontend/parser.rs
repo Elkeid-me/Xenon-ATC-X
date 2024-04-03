@@ -1,3 +1,5 @@
+mod expr;
+
 use super::ast::{Expr::*, ExprConst::*, *};
 use super::ty::RefType;
 use super::ty::Type::{self, *};

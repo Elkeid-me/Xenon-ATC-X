@@ -1,5 +1,4 @@
 mod ast;
-mod expr;
 mod ir_generator;
 mod parser;
 mod ty;
