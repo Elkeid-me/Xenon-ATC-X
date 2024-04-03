@@ -71,15 +71,20 @@ impl Scope for SymbolTable {
             Int | IntPointer(_) | IntArray(_) => self.name_mangling(id, &ty),
             _ => (id, 0),
         };
+        let is_const_array = matches!(init, Some(ConstInit::List(_)));
         let original_id = &mangled_id[prefix_len..];
         match self.table.last_mut().unwrap().insert(original_id.to_string(), Symbol(ty, mangled_id.clone(), init)) {
             Some(Symbol(Keyword, _, _)) => Err(format!("标识符 {original_id} 是关键字，不能重定义")),
             Some(_) => Err(format!("标识符 {original_id} 在当前作用域中已存在")),
             None => {
-                match &mut self.local_name_table {
-                    Some(m) => m.insert(mangled_id.clone()),
-                    None => self.global_name_table.insert(mangled_id.clone()),
-                };
+                if is_const_array {
+                    self.global_name_table.insert(mangled_id.clone());
+                } else {
+                    match &mut self.local_name_table {
+                        Some(m) => m.insert(mangled_id.clone()),
+                        None => self.global_name_table.insert(mangled_id.clone()),
+                    };
+                }
                 Ok(mangled_id)
             }
         }
