@@ -32,7 +32,23 @@
 \date{\today}
 \begin{document}
     \maketitle
-    \section{}
+    \section{语言扩展}
+    除了基础的 SysY 语言外，Xenon 扩展了如下功能：
+    \begin{enumerate}
+        \item 自定义中缀运算符。例如：
+        \begin{minted}[linenos,frame=single]{c}
+int f(int x, int y) { return (x - 1) * (y - 1); }
+int main()
+{
+    int x = 2, y = 2;
+    return x ~f~ y; // 等价于 return f(x, y);
+}
+        \end{minted}
+        \item 各类复合赋值运算符，如 \inlinec{+=}，\inlinec{*=}。
+        \item 复合运算符返回左值，这意味着可以写 \inlinec{x = y = z;} 这种代码。
+        \item 自增自减运算符，其中前缀自增自减返回左值。例如 \inlinec{++x = 1;}
+        \item 以常量下标取得的常量数组元素可以参与编译期常量表达式求值。
+    \end{enumerate}
     \section{组成部分}
     Xenon 包含 3 个部分：
     \begin{enumerate}
@@ -44,14 +60,14 @@
     按照顺序，预处理器负责：
     \begin{enumerate}
         \item 将单独的 \inlinec{\r}，或 \inlinec{\r\n} 替换为 \inlinec{\n}。
-        \item 对于所有的以反斜杠结尾的行，将其与下一行连在一起. 例如：
+        \item 对于所有的以反斜杠结尾的行，将其与下一行连在一起。例如：
         \item 删除所有的注释。
     \end{enumerate}
-    以上三个步骤各通过一个自动机完成。自动机被组织成生成器的形式（使用 create generator）。
+    以上三个步骤各通过一个自动机完成。自动机被组织成生成器的形式（使用 crate generator）。
     \section{前端}
     前端负责将不包含注释的 SysY 源代码翻译为 KoopaIR。前端的处理步骤为：
     \subsection{第一次解析}
-    使用 create pest 将代码处理为语法树。注意，这里语法树使用的是 pest 中 \inlinerust{Pairs<Rule>} 的形式。
+    使用 crate pest 将代码处理为语法树。注意，这里语法树使用的是 pest 中 \inlinerust{Pairs<Rule>} 的形式。
 
     使用 pest 的原因是 pest 基于解析表达式文法，可以轻松绕过悬垂 else 问题。
 
@@ -104,6 +120,7 @@ int main()
     \end{minted}
     考虑到 C 标准中将“下划线+大写字母”开头的标识符视为保留名，这样做是完全合理的。
     \subsection{生成 IR}
+    \subsubsection{生成粗 IR}
     前端直接生成文本形式的 IR。同样地，这一步使用大量的递归函数。
 
     SysY 中的表达式被进一步分为三类：
@@ -140,4 +157,52 @@ store %5, %_Ix
 store %5, %_Iz
     \end{minted}
     而这个表达式的 ID 是 \inlinec{%5}。
+    \subsubsection{IR 后处理}
+    上述生成的 IR 称为粗 IR，因为它有很多不符合规范的情况。例如，代码：
+    \begin{minted}[linenos,frame=single]{c}
+void f() { }
+
+int main()
+{
+    while(1)
+        continue;
+}
+    \end{minted}
+    会生成 IR：
+    \begin{minted}[linenos,frame=single]{c}
+fun @f() {
+%1:
+}
+fun @main(): i32 {
+%3:
+    jump %5
+%5:
+    jump %5
+    jump %5
+%6:
+}
+    \end{minted}
+
+    可以看到，某些基本块存在连续的 \inlinec{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR。分为三个部分：
+    \begin{enumerate}
+        \item 对于连续的多个 \inlinec{jump}、\inlinec{ret}、或 \inlinec{br} 指令，只保留第一个。
+        \item 如果某个基本块中间出现了 \inlinec{jump}、\inlinec{ret}、或 \inlinec{br}，则直接在该指令后添加一个标签；
+        \item 如果某个基本块是空的，则根据函数返回值类型添加 \inlinec{ret 0} 或 \inlinec{ret}。
+    \end{enumerate}
+
+    上述 IR 后处理的结果为：
+    \begin{minted}[linenos,frame=single]{c}
+fun @f() {
+%1:
+    ret
+}
+fun @main(): i32 {
+%3:
+    jump %5
+%5:
+    jump %5
+%6:
+    ret 0
+}
+    \end{minted}
 \end{document}
