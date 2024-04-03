@@ -142,10 +142,10 @@ impl Generator {
                 let (arg_str, arg_ids) = args
                     .into_iter()
                     .map(|expr| self.expr_rvalue(expr))
-                    .reduce(|(l_str, l_id), (r_str, r_id)| (format!("{}{}", l_str, r_str), format!("{}, {}", l_id, r_id)))
+                    .reduce(|(l_str, l_id), (r_str, r_id)| (format!("{l_str}{r_str}"), format!("{l_id}, {r_id}")))
                     .unwrap_or_default();
                 let tmp_id = self.counter.get();
-                (format!("{}    {} = call @{}({})\n", arg_str, tmp_id, fun_id, arg_ids), tmp_id)
+                (format!("{arg_str}    {tmp_id} = call @{fun_id}({arg_ids})\n"), tmp_id)
             }
             Array(id, subscripts, rvalue_int) => self.array_elem_rvalue(id, subscripts, rvalue_int),
         }

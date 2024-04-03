@@ -85,12 +85,12 @@ impl Generator {
             Statement::Return(expr) => match expr {
                 Some(expr) => {
                     let (expr_str, expr_id) = self.expr_rvalue(expr);
-                    format!("{}    ret {}\n", expr_str, expr_id)
+                    format!("{expr_str}    ret {expr_id}\n")
                 }
                 None => "    ret\n".to_string(),
             },
-            Statement::Break => format!("    jump {}\n", while_next_id),
-            Statement::Continue => format!("    jump {}\n", while_id),
+            Statement::Break => format!("    jump {while_next_id}\n"),
+            Statement::Continue => format!("    jump {while_id}\n"),
         }
     }
     pub fn block(&mut self, block: Block, while_id: &str, while_next_id: &str) -> (String, String) {
@@ -99,7 +99,7 @@ impl Generator {
             .into_iter()
             .map(|item| match item {
                 BlockItem::Def(def) => self.def(def),
-                BlockItem::Block(block) => format!("{}\n", self.block(block, while_id, while_next_id).0),
+                BlockItem::Block(block) => self.block(block, while_id, while_next_id).0,
                 BlockItem::Statement(stmt) => self.statement(stmt, while_id, while_next_id),
             })
             .collect();

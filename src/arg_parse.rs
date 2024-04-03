@@ -14,7 +14,7 @@ pub fn parse(mut args: Args) -> Result<ParsedArgs, String> {
         "-koopa" => Ok(Mode::Koopa),
         "-riscv" => Ok(Mode::RiscV),
         "-perf" => Ok(Mode::Optimization),
-        s => Err(format!("未知的模式: {}", s)),
+        s => Err(format!("未知的模式: {s}")),
     }?;
     let input = args.next().unwrap();
     let output = args.skip(1).next().unwrap();

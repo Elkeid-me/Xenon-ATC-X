@@ -6,6 +6,11 @@ mod backend;
 mod frontend;
 mod preprocessor;
 
+use arg_parse::*;
+use backend::generate_asm;
+use frontend::generate_ir;
+use preprocessor::preprocess;
+
 /// 每个人承担自己的风险！
 #[macro_export]
 macro_rules! risk {
@@ -18,13 +23,13 @@ macro_rules! risk {
 }
 
 fn compile() -> Result<(), Box<dyn std::error::Error>> {
-    let (mode, input, output) = arg_parse::parse(std::env::args())?;
-    let code = preprocessor::preprocess(read_to_string(input)?);
+    let (mode, input, output) = parse(std::env::args())?;
+    let code = preprocess(read_to_string(input)?);
     let mut f = File::create(output)?;
-    let ir = frontend::generate_ir(&code)?;
+    let ir = generate_ir(&code)?;
     match mode {
-        arg_parse::Mode::Koopa => f.write_fmt(format_args!("{ir}"))?,
-        arg_parse::Mode::RiscV => f.write_fmt(format_args!("{}", backend::generate_asm(ir)))?,
+        Mode::Koopa => f.write_fmt(format_args!("{ir}"))?,
+        Mode::RiscV => f.write_fmt(format_args!("{}", generate_asm(ir)))?,
         _ => todo!(),
     }
     Ok(())

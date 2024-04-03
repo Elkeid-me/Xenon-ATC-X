@@ -135,7 +135,7 @@ impl Generator {
         }
     }
     pub fn local_array(&mut self, ty: Type, id: String, list: Vec<InitListItem>) -> String {
-        let local_id = format!("%{}", id);
+        let local_id = format!("%{id}");
         let alloc = format!("    {} = alloc {}\n", &local_id, ty.to_koopa_type_str());
         let len = risk!(ty, Type::IntArray(len) => len);
         format!("{}{}", alloc, self.local_array_impl(&len, &local_id, list))

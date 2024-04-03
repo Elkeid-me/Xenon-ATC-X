@@ -27,9 +27,9 @@ impl Generator {
                 let (arg_str, arg_ids) = args
                     .into_iter()
                     .map(|expr| self.expr_rvalue(expr))
-                    .reduce(|(l_str, l_id), (r_str, r_id)| (format!("{}{}", l_str, r_str), format!("{}, {}", l_id, r_id)))
+                    .reduce(|(l_str, l_id), (r_str, r_id)| (format!("{l_str}{r_str}"), format!("{l_id}, {r_id}")))
                     .unwrap_or_default();
-                format!("{}    call @{}({})\n", arg_str, id, arg_ids)
+                format!("{arg_str}    call @{id}({arg_ids})\n")
             }
             Array(_, subscripts, _) => subscripts.into_iter().map(|expr| self.expr_dvalue(expr)).collect(),
             Var(_) | Num(_) => String::new(),

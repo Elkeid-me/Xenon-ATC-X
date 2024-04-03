@@ -285,7 +285,7 @@ impl ASTBuilder {
             match ele.as_rule() {
                 Rule::initializer_list => {
                     if len_prod.len() == 1 || sum % len_prod[0] != 0 {
-                        return Err(format!("{:?} 不能是初始化列表", ele));
+                        return Err(format!("{ele:?} 不能是初始化列表"));
                     }
                     //   对于 `int lint[1][14][51][4]`，我们计算一个列表：`L = {4, 204, 2856, 2856}`，这个数组给出了每一层的大小.
                     //                                                      ^   ^    ^     ^
