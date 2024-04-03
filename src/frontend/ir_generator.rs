@@ -1,4 +1,8 @@
+use std::collections::LinkedList;
+
 use super::ast::*;
+use genawaiter::{stack::let_gen, yield_};
+
 mod def;
 mod dvalue;
 mod lvalue;
@@ -29,51 +33,58 @@ impl Generator {
         }
     }
     fn generate(&mut self, ast: TranslationUnit) -> String {
-        let ir: String = ast.into_iter().map(|global_item| self.global_def(global_item)).collect();
-        let ir = ir.split('\n').filter(|s| !s.is_empty());
-        let mut v = Vec::new();
-        let mut flag = false;
-        // 删除连续的 `jump`、`ret` 和 `br`.
-        for i in ir {
-            if i.starts_with("    jump") || i.starts_with("    ret") || i.starts_with("    br") {
-                if !flag {
-                    flag = true;
-                    v.push(i);
+        let ir: LinkedList<_> = ast.into_iter().map(|global_item| self.global_def(global_item)).collect();
+        let_gen!(ir, {
+            for iter in ir {
+                for str in iter.split('\n').filter(|s| !s.is_empty()) {
+                    yield_!(str.to_string());
                 }
-            } else {
-                v.push(i);
-                flag = false;
             }
-        }
-        let mut v_2 = Vec::new();
-        for i in 0..v.len() - 1 {
-            v_2.push(format!("{}\n", v[i]));
-            if (v[i].starts_with("    jump") || v[i].starts_with("    ret") || v[i].starts_with("    br"))
-                && (v[i + 1].chars().last().unwrap() != ':' && v[i + 1] != "}")
-            {
-                v_2.push(format!("{}:\n", self.counter.get()));
+        });
+        let_gen!(postprocess, {
+            let mut flag = true;
+            for i in ir {
+                if flag && (i.starts_with("    jump") || i.starts_with("    ret") || i.starts_with("    br")) {
+                    yield_!(i);
+                    flag = false;
+                } else if i.chars().next().unwrap() == '%' && i.chars().last().unwrap() == ':' || i == "}" {
+                    yield_!(i);
+                    flag = true;
+                } else if flag {
+                    yield_!(i)
+                }
             }
-        }
-        v_2.push(format!("{}\n", v.last().unwrap()));
-        let mut v_3: Vec<&str> = Vec::new();
-        let mut flag = false;
-        for i in 0..v_2.len() - 1 {
-            if v_2[i].ends_with("): i32 {\n") {
-                flag = true;
-            } else if v_2[i].ends_with(") {\n") {
-                flag = false;
+        });
+        let_gen!(add_ret, {
+            let mut flag = false;
+            let mut ret_int = false;
+            for i in postprocess {
+                if i.ends_with("): i32 {") {
+                    yield_!(i);
+                    flag = true;
+                    ret_int = true;
+                } else if i.ends_with(") {") {
+                    yield_!(i);
+                    flag = true;
+                    ret_int = false;
+                } else if i.starts_with("    jump") || i.starts_with("    ret") || i.starts_with("    br") {
+                    yield_!(i);
+                    flag = true;
+                } else if i.chars().next().unwrap() == '%' && i.chars().last().unwrap() == ':' || i == "}" {
+                    if !flag && ret_int {
+                        yield_!("    ret 0".to_string())
+                    } else if !flag && !ret_int {
+                        yield_!("    ret".to_string())
+                    }
+                    yield_!(i);
+                    flag = false;
+                } else {
+                    yield_!(i)
+                }
             }
-            v_3.push(&v_2[i]);
-            if !(v_2[i].starts_with("    jump") || v_2[i].starts_with("    ret") || v_2[i].starts_with("    br"))
-                && !v_2[i].ends_with("{\n")
-                && (v_2[i + 1] == "}\n" || v_2[i + 1].ends_with(":\n"))
-            {
-                v_3.push(if flag { "    ret 0\n" } else { "    ret\n" });
-            }
-        }
-        v_3.push(v_2.last().unwrap());
-        let ir: String = v_3.into_iter().collect();
+        });
         let global: String = self.global_const_init.iter().map(|str| str.as_str()).collect();
+        let ir: String = add_ret.into_iter().map(|s| format!("{s}\n")).collect();
         format!("{global}{ir}")
     }
     fn assign_expr_helper(&mut self, l: Expr, r: Expr, op: &str, rvalue: bool) -> (String, String) {
