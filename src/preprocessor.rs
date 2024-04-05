@@ -1,4 +1,4 @@
-use genawaiter::{yield_,stack::let_gen};
+use genawaiter::{stack::let_gen, yield_};
 
 pub fn preprocess(code: String) -> String {
     let_gen!(remove_cr, {

@@ -83,7 +83,7 @@ impl Generator {
                 }
             }
         });
-        let global: String = self.global_const_init.iter().map(|str| str.as_str()).collect();
+        let global = self.global_const_init.join("");
         let ir: String = add_ret.into_iter().map(|s| format!("{s}\n")).collect();
         format!("{global}{ir}")
     }

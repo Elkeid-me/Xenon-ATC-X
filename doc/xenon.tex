@@ -3,28 +3,64 @@
 \usepackage{graphicx,siunitx,subcaption,amssymb,amsmath,fixdif,tabularray,minted}
 \sisetup{mode=text,per-mode=symbol}
 \RenewDocumentCommand{\theFancyVerbLine}{}{\ttfamily{\arabic{FancyVerbLine}}}
-
 \usepackage[left=3.17cm,right=3.17cm,top=2.54cm,bottom=2.54cm]{geometry}
-
-\setCJKmainfont{Source Han Serif SC}[
-    BoldFont       = Source Han Serif SC Bold,
+\usepackage[colorlinks,linkcolor=blue,citecolor=red]{hyperref}
+\setCJKmainfont{Source Han Serif SC VF}[
+    Renderer       = OpenType,
+    Weight         = 400,
+    BoldFont       = Source Han Serif SC VF,
+    BoldFeatures   = {Weight=700},
     ItalicFont     = STKaiti,
     BoldItalicFont = STKaiti
 ]
-\setCJKmonofont{Source Han Sans SC Light}
-\setCJKsansfont{Source Han Sans SC Light}[
-    BoldFont       = Source Han Sans SC Normal,
-    ItalicFont     = Source Han Sans SC ExtraLight,
-    BoldItalicFont = Source Han Sans SC Light
+\setCJKmonofont{Source Han Sans SC VF}[
+    Renderer       = OpenType,
+    Weight         = 300,
+    BoldFont       = Source Han Sans SC VF,
+    BoldFeatures   = {Weight=500},
+    ItalicFont     = STKaiti,
+    BoldItalicFont = STKaiti
 ]
-\setmainfont{EB Garamond}
-\setmonofont{Source Code Pro}
-\setsansfont{Source Sans 3 Light}[
-    BoldFont       = Source Sans 3 Medium,
-    ItalicFont     = Source Sans 3 Light Italic,
-    BoldItalicFont = Source Sans 3 Medium Italic
+\setCJKsansfont{Source Han Sans SC VF}[
+    Renderer           = OpenType,
+    Weight             = 350,
+    BoldFont           = Source Han Sans SC VF,
+    BoldFeatures       = {Weight=500},
+    ItalicFont         = Source Han Sans SC VF,
+    ItalicFeatures     = {Weight=250},
+    BoldItalicFont     = Source Han Sans SC VF,
+    BoldItalicFeatures = {Weight=300}
 ]
-\usepackage[colorlinks,linkcolor=blue,citecolor=red]{hyperref}
+\setmainfont{Noto Serif}[
+    Renderer           = OpenType,
+    Weight             = 300,
+    BoldFont           = Noto Serif,
+    BoldFeatures       = {Weight=500},
+    ItalicFont         = Noto Serif Italic,
+    ItalicFeatures     = {Weight=300},
+    BoldItalicFont     = Noto Serif Italic,
+    BoldItalicFeatures = {Weight=500}
+]
+\setmonofont{SourceCodeVF}[
+    Renderer           = OpenType,
+    Weight             = 400,
+    BoldFont           = SourceCodeVF,
+    BoldFeatures       = {Weight=700},
+    ItalicFont         = SourceCodeVF Italic,
+    ItalicFeatures     = {Weight=400},
+    BoldItalicFont     = SourceCodeVF Italic,
+    BoldItalicFeatures = {Weight=700}
+]
+\setsansfont{SourceSans3VF}[
+    Renderer           = OpenType,
+    Weight             = 300,
+    BoldFont           = SourceSans3VF,
+    BoldFeatures       = {Weight=500},
+    ItalicFont         = SourceSans3VF Italic,
+    ItalicFeatures     = {Weight=300},
+    BoldItalicFont     = SourceSans3VF Italic,
+    BoldItalicFeatures = {Weight=500}
+]
 \NewDocumentCommand{\inlinec}{}{\mintinline{c}}
 \NewDocumentCommand{\inlinerust}{}{\mintinline{rust}}
 \title{关于 Xenon（ATC-X）内部实现的注释}
@@ -92,33 +128,42 @@ int main()
 
     名字重整是这样的操作：代码
     \begin{minted}[linenos,frame=single]{c}
-const int x[1] = {};
+int f()
+{
+    const int x[1] = {1};
+}
+const int x[1] = {2};
 int main()
 {
-    int x = x[0];
-    int y = x + 1;
+    const int x[1] = {x[0] + 3};
+    int y = x[0] + 1;
     {
-        int x = x;
-        int z = y + x;
+        int x = x[0];
+        int y = y + x;
     }
-    return x;
+    return x[0];
 }
     \end{minted}
     被重整化为：
     \begin{minted}[linenos,frame=single]{c}
-const int _Ax[1] = {};
+int f()
+{
+    const int _Ax[1] = {1};
+}
+const int _A_Ax[1] = {2};
 int main()
 {
-    int _Ix = _Ax[0];
-    int _Iy = _Ix + 1;
+    const int _A_A_Ax[1] = {_A_Ax[0] + 3};
+    int _Iy = _A_A_Ax[0] + 1;
     {
-        int _I_Ix = _Ix;
-        int _Iz = _Iy + _I_Ix;
+        int _Ix = _A_A_Ax[0];
+        int _I_Iy = _Iy + _Ix;
     }
-    return _Ix;
+    return _A_A_A[0];
 }
     \end{minted}
-    考虑到 C 标准中将“下划线+大写字母”开头的标识符视为保留名，这样做是完全合理的。
+    考虑到 C 标准中将“下划线+大写字母”开头的标识符视为保留名，这样做是完全合理的。请注意，这里对常量数组做了特殊处理，因为生成 IR 时所有的局部
+    常量数组会被提升至全局，因此需要一个全局唯一的名字。
     \subsection{生成 IR}
     \subsubsection{生成粗 IR}
     前端直接生成文本形式的 IR。同样地，这一步使用大量的递归函数。
@@ -164,8 +209,13 @@ void f() { }
 
 int main()
 {
-    while(1)
-        continue;
+    int x;
+    {
+        while(1)
+            continue;
+        return x + 1;
+    }
+    return x + 1;
 }
     \end{minted}
     会生成 IR：
@@ -175,18 +225,24 @@ fun @f() {
 }
 fun @main(): i32 {
 %3:
-    jump %5
-%5:
-    jump %5
-    jump %5
+    %_Ix = alloc i32
+    jump %6
 %6:
+    jump %6
+    jump %6
+%7:
+    %10 = load %_Ix
+    %9 = add %10, 1
+    ret %9
+    %12 = load %_Ix
+    %11 = add %12, 1
+    ret %11
 }
     \end{minted}
 
-    可以看到，某些基本块存在连续的 \inlinec{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR。分为三个部分：
+    可以看到，某些基本块存在连续的 \inlinec{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR。分为两个部分：
     \begin{enumerate}
-        \item 对于连续的多个 \inlinec{jump}、\inlinec{ret}、或 \inlinec{br} 指令，只保留第一个。
-        \item 如果某个基本块中间出现了 \inlinec{jump}、\inlinec{ret}、或 \inlinec{br}，则直接在该指令后添加一个标签；
+        \item 基本块内部，第一个 \inlinec{jump}、\inlinec{br} 或 \inlinec{ret} 后的所有指令被忽略；
         \item 如果某个基本块是空的，则根据函数返回值类型添加 \inlinec{ret 0} 或 \inlinec{ret}。
     \end{enumerate}
 
@@ -198,11 +254,14 @@ fun @f() {
 }
 fun @main(): i32 {
 %3:
-    jump %5
-%5:
-    jump %5
+    %_Ix = alloc i32
+    jump %6
 %6:
-    ret 0
+    jump %6
+%7:
+    %10 = load %_Ix
+    %9 = add %10, 1
+    ret %9
 }
     \end{minted}
 \end{document}
