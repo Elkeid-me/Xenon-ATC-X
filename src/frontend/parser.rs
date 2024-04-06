@@ -483,14 +483,6 @@ impl ASTBuilder {
         let block = block
             .into_inner()
             .filter(|pair| !matches!(pair.as_rule(), Rule::int_keyword | Rule::const_keyword))
-            .scan(true, |s, ele| {
-                if *s {
-                    *s = !matches!(ele.as_rule(), Rule::return_statement | Rule::break_keyword | Rule::continue_keyword);
-                    Some(ele)
-                } else {
-                    None
-                }
-            })
             .map(|pair| match pair.as_rule() {
                 Rule::block => Ok(BlockItem::Block(self.parse_block(pair, in_while, ret_type)?)),
                 Rule::expression

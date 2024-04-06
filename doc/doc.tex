@@ -1,0 +1,81 @@
+\PassOptionsToPackage{no-math}{fontspec}
+\ExplSyntaxOn
+    \cs_if_exist:NTF \DefaultFonts
+      { \documentclass[a4paper]{ctexart} }
+      { \documentclass[a4paper,fontset=none]{ctexart} }
+\ExplSyntaxOff
+\usepackage{graphicx,siunitx,subcaption,amssymb,amsmath,fixdif,tabularray,minted}
+\sisetup{mode=text,per-mode=symbol}
+\RenewDocumentCommand{\theFancyVerbLine}{}{\ttfamily{\arabic{FancyVerbLine}}}
+\usepackage[left=3.17cm,right=3.17cm,top=2.54cm,bottom=2.54cm]{geometry}
+\usepackage[colorlinks,linkcolor=blue,citecolor=red]{hyperref}
+\ExplSyntaxOn
+\cs_if_exist:NF \DefaultFonts
+{
+    \setCJKmainfont{Source Han Serif SC VF}[
+        Renderer       = OpenType,
+        Weight         = 400,
+        BoldFont       = Source Han Serif SC VF,
+        BoldFeatures   = {Weight=700},
+        ItalicFont     = STKaiti,
+        BoldItalicFont = STKaiti
+    ]
+    \setCJKmonofont{Source Han Sans SC VF}[
+        Renderer       = OpenType,
+        Weight         = 300,
+        BoldFont       = Source Han Sans SC VF,
+        BoldFeatures   = {Weight=500},
+        ItalicFont     = STKaiti,
+        BoldItalicFont = STKaiti
+    ]
+    \setCJKsansfont{Source Han Sans SC VF}[
+        Renderer           = OpenType,
+        Weight             = 350,
+        BoldFont           = Source Han Sans SC VF,
+        BoldFeatures       = {Weight=500},
+        ItalicFont         = Source Han Sans SC VF,
+        ItalicFeatures     = {Weight=250},
+        BoldItalicFont     = Source Han Sans SC VF,
+        BoldItalicFeatures = {Weight=300}
+    ]
+    \setmainfont{Noto Serif}[
+        Renderer           = OpenType,
+        Weight             = 400,
+        BoldFont           = Noto Serif,
+        BoldFeatures       = {Weight=500},
+        ItalicFont         = Noto Serif Italic,
+        ItalicFeatures     = {Weight=400},
+        BoldItalicFont     = Noto Serif Italic,
+        BoldItalicFeatures = {Weight=500}
+    ]
+    \setmonofont{SourceCodeVF}[
+        Renderer           = OpenType,
+        Weight             = 400,
+        BoldFont           = SourceCodeVF,
+        BoldFeatures       = {Weight=700},
+        ItalicFont         = SourceCodeVF Italic,
+        ItalicFeatures     = {Weight=400},
+        BoldItalicFont     = SourceCodeVF Italic,
+        BoldItalicFeatures = {Weight=700}
+    ]
+    \setsansfont{SourceSans3VF}[
+        Renderer           = OpenType,
+        Weight             = 300,
+        BoldFont           = SourceSans3VF,
+        BoldFeatures       = {Weight=500},
+        ItalicFont         = SourceSans3VF Italic,
+        ItalicFeatures     = {Weight=300},
+        BoldItalicFont     = SourceSans3VF Italic,
+        BoldItalicFeatures = {Weight=500}
+    ]
+}
+\ExplSyntaxOff
+\NewDocumentCommand{\inlinec}{}{\mintinline{c}}
+\NewDocumentCommand{\inlinerust}{}{\mintinline{rust}}
+\title{关于 Xenon（ATC-X） 内部实现的注释}
+\author{REDACTED}
+\date{\today}
+\begin{document}
+    \maketitle
+    \input{xenon.tex}
+\end{document}

@@ -1,137 +1,81 @@
-\PassOptionsToPackage{no-math}{fontspec}
-\documentclass[a4paper,fontset=none]{ctexart}
-\usepackage{graphicx,siunitx,subcaption,amssymb,amsmath,fixdif,tabularray,minted}
-\sisetup{mode=text,per-mode=symbol}
-\RenewDocumentCommand{\theFancyVerbLine}{}{\ttfamily{\arabic{FancyVerbLine}}}
-\usepackage[left=3.17cm,right=3.17cm,top=2.54cm,bottom=2.54cm]{geometry}
-\usepackage[colorlinks,linkcolor=blue,citecolor=red]{hyperref}
-\setCJKmainfont{Source Han Serif SC VF}[
-    Renderer       = OpenType,
-    Weight         = 400,
-    BoldFont       = Source Han Serif SC VF,
-    BoldFeatures   = {Weight=700},
-    ItalicFont     = STKaiti,
-    BoldItalicFont = STKaiti
-]
-\setCJKmonofont{Source Han Sans SC VF}[
-    Renderer       = OpenType,
-    Weight         = 300,
-    BoldFont       = Source Han Sans SC VF,
-    BoldFeatures   = {Weight=500},
-    ItalicFont     = STKaiti,
-    BoldItalicFont = STKaiti
-]
-\setCJKsansfont{Source Han Sans SC VF}[
-    Renderer           = OpenType,
-    Weight             = 350,
-    BoldFont           = Source Han Sans SC VF,
-    BoldFeatures       = {Weight=500},
-    ItalicFont         = Source Han Sans SC VF,
-    ItalicFeatures     = {Weight=250},
-    BoldItalicFont     = Source Han Sans SC VF,
-    BoldItalicFeatures = {Weight=300}
-]
-\setmainfont{Noto Serif}[
-    Renderer           = OpenType,
-    Weight             = 300,
-    BoldFont           = Noto Serif,
-    BoldFeatures       = {Weight=500},
-    ItalicFont         = Noto Serif Italic,
-    ItalicFeatures     = {Weight=300},
-    BoldItalicFont     = Noto Serif Italic,
-    BoldItalicFeatures = {Weight=500}
-]
-\setmonofont{SourceCodeVF}[
-    Renderer           = OpenType,
-    Weight             = 400,
-    BoldFont           = SourceCodeVF,
-    BoldFeatures       = {Weight=700},
-    ItalicFont         = SourceCodeVF Italic,
-    ItalicFeatures     = {Weight=400},
-    BoldItalicFont     = SourceCodeVF Italic,
-    BoldItalicFeatures = {Weight=700}
-]
-\setsansfont{SourceSans3VF}[
-    Renderer           = OpenType,
-    Weight             = 300,
-    BoldFont           = SourceSans3VF,
-    BoldFeatures       = {Weight=500},
-    ItalicFont         = SourceSans3VF Italic,
-    ItalicFeatures     = {Weight=300},
-    BoldItalicFont     = SourceSans3VF Italic,
-    BoldItalicFeatures = {Weight=500}
-]
-\NewDocumentCommand{\inlinec}{}{\mintinline{c}}
-\NewDocumentCommand{\inlinerust}{}{\mintinline{rust}}
-\title{关于 Xenon（ATC-X）内部实现的注释}
-\author{REDACTED}
-\date{\today}
-\begin{document}
-    \maketitle
-    \section{语言扩展}
-    除了基础的 SysY 语言外，Xenon 扩展了如下功能：
-    \begin{enumerate}
-        \item 自定义中缀运算符。例如：
-        \begin{minted}[linenos,frame=single]{c}
+
+\section{语言扩展}
+除了基础的 SysY 语言外，ATC-X 扩展了如下功能：
+\begin{enumerate}
+    \item 自定义中缀运算符。例如：
+    \begin{minted}[linenos,frame=single]{c}
 int f(int x, int y) { return (x - 1) * (y - 1); }
 int main()
 {
     int x = 2, y = 2;
     return x ~f~ y; // 等价于 return f(x, y);
 }
-        \end{minted}
-        \item 各类复合赋值运算符，如 \inlinec{+=}，\inlinec{*=}。
-        \item 复合运算符返回左值，这意味着可以写 \inlinec{x = y = z;} 这种代码。
-        \item 自增自减运算符，其中前缀自增自减返回左值。例如 \inlinec{++x = 1;}
-        \item 以常量下标取得的常量数组元素可以参与编译期常量表达式求值。
-    \end{enumerate}
-    \section{组成部分}
-    Xenon 包含 3 个部分：
-    \begin{enumerate}
-        \item 预处理器；
-        \item 前端；
-        \item 后端。
-    \end{enumerate}
-    \section{预处理器}
-    按照顺序，预处理器负责：
-    \begin{enumerate}
-        \item 将单独的 \inlinec{\r}，或 \inlinec{\r\n} 替换为 \inlinec{\n}。
-        \item 对于所有的以反斜杠结尾的行，将其与下一行连在一起。例如：
-        \item 删除所有的注释。
-    \end{enumerate}
-    以上三个步骤各通过一个自动机完成。自动机被组织成生成器的形式（使用 crate generator）。
-    \section{前端}
-    前端负责将不包含注释的 SysY 源代码翻译为 KoopaIR。前端的处理步骤为：
-    \subsection{第一次解析}
-    使用 crate pest 将代码处理为语法树。注意，这里语法树使用的是 pest 中 \inlinerust{Pairs<Rule>} 的形式。
-
-    使用 pest 的原因是 pest 基于解析表达式文法，可以轻松绕过悬垂 else 问题。
-
-    注意，只使用 pest parser 难以处理运算符优先级。在 pest parser 的基础上，表达式又会经过 \inlinerust{PrattParser<Rule>} 的解析。
-    \subsection{第二次解析}
-    遍历上述 \inlinerust{Pairs<Rule>} 的语法树，转为我定义的抽象语法树。这一步使用大量的递归函数。
-    \subsection{语义检查}
-    遍历抽象语法树，进行语义检查和常量表达式计算。这一步使用大量的递归函数。
-
-    实际实现中，第二次解析和语义检查是合并在一起的。除此之外，还会进行以下两个化简：
-    \begin{enumerate}
-        \item 表达式化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}
-        \item （简易的）不可达语句消除。任意 \inlinec{return} 后的语句，或是循环内 \inlinec{break} / \inlinec{continue}
-        后的语句，都会直接忽略。
-    \end{enumerate}
-
-    为了生成 IR 时更加方便，还会进行两个操作：
-    \begin{enumerate}
-        \item 在初始化列表中填充 0；
-        \item 名字重整。
-    \end{enumerate}
-
-    名字重整是这样的操作：代码
+    \end{minted}
+    \item 各类复合赋值运算符，如 \inlinec{+=}，\inlinec{*=}。
+    \item 复合运算符返回左值，这意味着可以写 \inlinec{x = y = z;} 这种代码。
+    \item 自增自减运算符，其中前缀自增自减返回左值。例如 \inlinec{++x = 1;}
+    \item 以常量下标取得的常量数组元素可以参与编译期常量表达式求值。
+\end{enumerate}
+\section{组成部分}
+ATC-X 包含 3 个部分：
+\begin{enumerate}
+    \item 预处理器；
+    \item 前端；
+    \item 后端。
+\end{enumerate}
+\section{预处理器}
+按照顺序，预处理器负责：
+\begin{enumerate}
+    \item 将单独的 \inlinec{\r}，或 \inlinec{\r\n} 替换为 \inlinec{\n}。
+    \item 对于所有的以反斜杠结尾的行，将其与下一行连在一起。例如：
     \begin{minted}[linenos,frame=single]{c}
-int f()
+int main()
 {
-    const int x[1] = {1};
+    int a = 1; // \
+    int a;
+    return a;
 }
+    \end{minted}
+    被处理为：
+    \begin{minted}[linenos,frame=single]{c}
+int main()
+{
+    int a = 1; //     int a;
+    return a;
+}
+    \end{minted}
+    \item 删除所有的注释。
+\end{enumerate}
+以上三个步骤各通过一个自动机完成。自动机被组织成生成器的形式（使用 crate genawaiter）。
+\section{前端}
+前端负责将不包含注释的 SysY 源代码翻译为 KoopaIR。前端的处理步骤为：
+\subsection{第一次解析}
+使用 crate pest 将代码处理为语法树。注意，这里语法树使用的是 pest 中 \inlinerust{Pairs<Rule>} 的形式。
+
+使用 pest 的原因是 pest 基于解析表达式文法，可以轻松绕过悬垂 else 问题。
+
+注意，只使用 pest parser 难以处理运算符优先级。在 pest parser 的基础上，表达式又会经过 \inlinerust{PrattParser<Rule>} 的解析。
+\subsection{第二次解析}
+遍历上述 \inlinerust{Pairs<Rule>} 的语法树，转为我定义的抽象语法树。这一步使用大量的递归函数。
+\subsection{语义检查}
+遍历抽象语法树，进行语义检查和常量表达式计算。这一步使用大量的递归函数。
+
+实际实现中，第二次解析和语义检查是合并在一起的。除此之外，还会进行以下两个化简：
+\begin{enumerate}
+    \item 表达式化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}
+    \item （简易的）不可达语句消除。任意 \inlinec{return} 后的语句，或是循环内 \inlinec{break} / \inlinec{continue}
+    后的语句，都会直接忽略。
+\end{enumerate}
+
+为了生成 IR 时更加方便，还会进行两个操作：
+\begin{enumerate}
+    \item 在初始化列表中填充 0；
+    \item 名字重整。
+\end{enumerate}
+
+名字重整是这样的操作：代码
+\begin{minted}[linenos,frame=single]{c}
+int f() { const int x[1] = {1}; }
 const int x[1] = {2};
 int main()
 {
@@ -143,13 +87,10 @@ int main()
     }
     return x[0];
 }
-    \end{minted}
-    被重整化为：
-    \begin{minted}[linenos,frame=single]{c}
-int f()
-{
-    const int _Ax[1] = {1};
-}
+\end{minted}
+被重整化为：
+\begin{minted}[linenos,frame=single]{c}
+int f() { const int _Ax[1] = {1}; }
 const int _A_Ax[1] = {2};
 int main()
 {
@@ -161,32 +102,32 @@ int main()
     }
     return _A_A_A[0];
 }
-    \end{minted}
-    考虑到 C 标准中将“下划线+大写字母”开头的标识符视为保留名，这样做是完全合理的。请注意，这里对常量数组做了特殊处理，因为生成 IR 时所有的局部
-    常量数组会被提升至全局，因此需要一个全局唯一的名字。
-    \subsection{生成 IR}
-    \subsubsection{生成粗 IR}
-    前端直接生成文本形式的 IR。同样地，这一步使用大量的递归函数。
+\end{minted}
+考虑到 C 标准中将“下划线+大写字母”开头的标识符视为保留名，这样做是完全合理的。请注意，这里对常量数组做了特殊处理，因为生成 IR 时所有的局部
+常量数组会被提升至全局，因此需要一个唯一的名字。
+\subsection{生成 IR}
+\subsubsection{生成粗 IR}
+前端直接生成文本形式的 IR。同样地，这一步使用大量的递归函数。
 
-    SysY 中的表达式被进一步分为三类：
-    \begin{enumerate}
-        \item 左值表达式，这种表达式计算的值是一个内存地址，如语句 \inlinec{x = 1;} 中的表达式 \inlinec{x} 是左值表达式；
-        鉴于 Xenon 对 SysY 做了语法扩展，语句 \inlinec{(x = y) = z;} 中的表达式 \inlinec{x} 和 \inlinec{x = y} 都是左值表达式。
-        \item 右值表达式，这种表达式计算的值只是一个值。
-        \item 弃值表达式，这种表达式计算的值会被舍弃。如语句 \inlinec{x = 1;} 中的 \inlinec{x = 1} 是弃值表达式，这个语句只会执行赋值的
-        副作用而不产生值；
-    \end{enumerate}
+SysY 中的表达式被进一步分为三类：
+\begin{enumerate}
+    \item 左值表达式，这种表达式计算的值是一个内存地址，如语句 \inlinec{x = 1;} 中的表达式 \inlinec{x} 是左值表达式；
+    鉴于 ATC-X 对 SysY 做了语法扩展，语句 \inlinec{(x = y) = z;} 中的表达式 \inlinec{x} 和 \inlinec{x = y} 都是左值表达式。
+    \item 右值表达式，这种表达式计算的值只是一个值。
+    \item 弃值表达式，这种表达式计算的值会被舍弃。如语句 \inlinec{x = 1;} 中的 \inlinec{x = 1} 是弃值表达式，这个语句只会执行赋值的
+    副作用而不产生值；
+\end{enumerate}
 
-    一个综合例子。语句 \inlinec{(x = f() + x) = (z = w);} 被翻译为 IR：
-    \begin{minted}[linenos,frame=single]{c}
+一个综合例子。语句 \inlinec{(x = f() + x) = (z = w);} 被翻译为 IR：
+\begin{minted}[linenos,frame=single]{c}
 %5 = load %_Iw
 store %5, %_Iz
 call @f()
 store %5, %_Ix
-    \end{minted}
-    在这之中，表达式 \inlinec{z = w} 是右值表达式，\inlinec{x = f() + x} 是左值表达式，而 \inlinec{(x = f() + x) = (z = w)} 整体是弃值表达式。
-    上面的 IR 是优化过的，优化逻辑为：如果一个赋值表达式的值类别是左值，则这个赋值表达式等号右侧的表达式应该视为弃值而不是右值。未优化的版本为：
-    \begin{minted}[linenos,frame=single]{c}
+\end{minted}
+在这之中，表达式 \inlinec{z = w} 是右值表达式，\inlinec{x = f() + x} 是左值表达式，而 \inlinec{(x = f() + x) = (z = w)} 整体是弃值表达式。
+上面的 IR 是优化过的，优化逻辑为：如果一个赋值表达式的值类别是左值，则这个赋值表达式等号右侧的表达式应该视为弃值而不是右值。未优化的版本为：
+\begin{minted}[linenos,frame=single]{c}
 %5 = load %_Iw
 store %5, %_Iz
 %7 = call @f()
@@ -194,17 +135,17 @@ store %5, %_Iz
 %6 = add %7, %8
 store %6, %_Ix
 store %5, %_Ix
-    \end{minted}
-    三类表达式都有专门的函数处理。处理左值表达式和右值表达式的函数返回类型为 \inlinerust{(String, String)}，分别为计算这个表达式的过程和表达式的 ID。
-    仍然以上述 \inlinec{(x = f() + x) = (z = w);} 语句为例。计算右值表达式 \inlinerust{(z = w)} 的过程为：
-    \begin{minted}[linenos,frame=single]{c}
+\end{minted}
+三类表达式都有专门的函数处理。处理左值表达式和右值表达式的函数返回类型为 \inlinerust{(String, String)}，分别为计算这个表达式的过程和表达式的 ID。
+仍然以上述 \inlinec{(x = f() + x) = (z = w);} 语句为例。计算右值表达式 \inlinerust{(z = w)} 的过程为：
+\begin{minted}[linenos,frame=single]{c}
 %5 = load %_Iw
 store %5, %_Iz
-    \end{minted}
-    而这个表达式的 ID 是 \inlinec{%5}。
-    \subsubsection{IR 后处理}
-    上述生成的 IR 称为粗 IR，因为它有很多不符合规范的情况。例如，代码：
-    \begin{minted}[linenos,frame=single]{c}
+\end{minted}
+而这个表达式的 ID 是 \inlinec{%5}。
+\subsubsection{IR 后处理}
+上述生成的 IR 称为粗 IR，因为它有很多不符合规范的情况。例如，代码：
+\begin{minted}[linenos,frame=single]{c}
 void f() { }
 
 int main()
@@ -217,9 +158,9 @@ int main()
     }
     return x + 1;
 }
-    \end{minted}
-    会生成 IR：
-    \begin{minted}[linenos,frame=single]{c}
+\end{minted}
+会生成 IR：
+\begin{minted}[linenos,frame=single]{c}
 fun @f() {
 %1:
 }
@@ -238,16 +179,16 @@ fun @main(): i32 {
     %11 = add %12, 1
     ret %11
 }
-    \end{minted}
+\end{minted}
 
-    可以看到，某些基本块存在连续的 \inlinec{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR。分为两个部分：
-    \begin{enumerate}
-        \item 基本块内部，第一个 \inlinec{jump}、\inlinec{br} 或 \inlinec{ret} 后的所有指令被忽略；
-        \item 如果某个基本块是空的，则根据函数返回值类型添加 \inlinec{ret 0} 或 \inlinec{ret}。
-    \end{enumerate}
+可以看到，某些基本块存在连续的 \inlinec{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR。分为两个部分：
+\begin{enumerate}
+    \item 基本块内部，第一个 \inlinec{jump}、\inlinec{br} 或 \inlinec{ret} 后的所有指令被忽略；
+    \item 如果某个基本块是空的，则根据函数返回值类型添加 \inlinec{ret 0} 或 \inlinec{ret}。
+\end{enumerate}
 
-    上述 IR 后处理的结果为：
-    \begin{minted}[linenos,frame=single]{c}
+上述 IR 后处理的结果为：
+\begin{minted}[linenos,frame=single]{c}
 fun @f() {
 %1:
     ret
@@ -258,10 +199,9 @@ fun @main(): i32 {
     jump %6
 %6:
     jump %6
-%7:
+    %7:
     %10 = load %_Ix
     %9 = add %10, 1
     ret %9
 }
-    \end{minted}
-\end{document}
+\end{minted}
