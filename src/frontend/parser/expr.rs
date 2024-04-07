@@ -414,6 +414,7 @@ impl ASTBuilder {
             },
             LogicNot(expr) => match self.simplify(*expr) {
                 (Num(a), _, _) => (Num((a == 0) as i32), true, false),
+                (LogicNot(expr), _, e_se) => (*expr, true, e_se),
                 (e, e_s, e_se) => (LogicNot(Box::new(e)), e_s, e_se),
             },
             Nega(expr) => match self.simplify(*expr) {
