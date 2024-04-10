@@ -44,6 +44,7 @@ Xenon 已被废弃，Xenon ATC-X 是其后继项目。ATC-X = Advanced Technolog
     这些字体是：
     - Source Han Serif SC VF
     - Source Han Sans SC VF
+    - STKaiti（华文楷体）
     - Noto Serif（可变字体版本）与 Noto Serif Italic（可变字体版本）
     - SourceCodeVF 与 SourceCodeVF Italic
     - SourceSans3VF 与 SourceSans3VF Italic
