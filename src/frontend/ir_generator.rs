@@ -1,13 +1,13 @@
-use std::collections::LinkedList;
-
-use super::ast::*;
-use genawaiter::{stack::let_gen, yield_};
-
 mod def;
 mod dvalue;
 mod lvalue;
 mod rvalue;
 mod statement;
+
+use std::collections::LinkedList;
+use super::{ast::*, ty::Type};
+use genawaiter::{stack::let_gen, yield_};
+use std::mem::take;
 
 struct Counter {
     value: usize,
@@ -23,17 +23,25 @@ impl Counter {
 struct Generator {
     counter: Counter,
     global_const_init: Vec<String>,
+    translation_unit: TranslationUnit,
 }
 
 impl Generator {
-    fn new() -> Self {
+    fn new(translation_unit: TranslationUnit) -> Self {
         Self {
             counter: Counter { value: 0 },
             global_const_init: Vec::new(),
+            translation_unit
         }
     }
-    fn generate(&mut self, ast: TranslationUnit) -> String {
-        let ir: LinkedList<_> = ast.into_iter().map(|global_item| self.global_def(global_item)).collect();
+    fn search(&mut self, def: Definition) -> (Type, String, Option<Init>) {
+        let (handler, id) = def;
+        let ty = take(self.translation_unit.types.get_mut(&handler).unwrap());
+        let init = take(self.translation_unit.inits.get_mut(&handler).unwrap());
+        (ty, id, init)
+    }
+    fn generate(mut self) -> String {
+        let ir: LinkedList<_> = take(&mut self.translation_unit.ast).into_iter().map(|global_item| self.global_def(global_item)).collect();
         let_gen!(ir, {
             for iter in ir {
                 for str in iter.split('\n').filter(|s| !s.is_empty()) {
@@ -114,5 +122,5 @@ impl Generator {
 }
 
 pub fn generator_ir(ast: TranslationUnit) -> String {
-    Generator::new().generate(ast)
+    Generator::new(ast).generate()
 }

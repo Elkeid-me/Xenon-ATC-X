@@ -1,6 +1,3 @@
-use std::fs::{read_to_string, File};
-use std::io::Write;
-
 mod arg_parse;
 mod backend;
 mod frontend;
@@ -10,6 +7,8 @@ use arg_parse::*;
 use backend::generate_asm;
 use frontend::generate_ir;
 use preprocessor::preprocess;
+use std::fs::{read_to_string, File};
+use std::io::Write;
 
 /// 每个人承担自己的风险！
 #[macro_export]

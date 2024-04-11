@@ -1,7 +1,15 @@
 use super::ty::Type;
+use std::collections::HashMap;
 
-pub type TranslationUnit = Vec<Definition>;
-pub type Definition = (Type, String, Option<Init>);
+pub type Handler = usize;
+
+pub struct TranslationUnit {
+    pub ast: Vec<Definition>,
+    pub types: HashMap<Handler, Type>,
+    pub inits: HashMap<Handler, Option<Init>>,
+}
+
+pub type Definition = (Handler, String);
 
 /// # 初始化器
 /// - [`Init::Function`] 是二元组，前者为每个形参的重整化后名字，后者为函数体.
@@ -15,6 +23,12 @@ pub enum Init {
     Const(i32),
     InitList(InitList),
     ConstInitList(ConstInitList),
+}
+
+impl Default for Init {
+    fn default() -> Self {
+        Self::Const(0)
+    }
 }
 
 #[derive(Debug, Clone)]

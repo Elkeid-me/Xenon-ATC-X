@@ -41,7 +41,7 @@ impl Generator {
         format!("fun @{id}({para_list_str}){ret_type_str} {{\n{entry_id}:\n{para_alloc}\n{block}\n}}\n")
     }
     pub fn def(&mut self, def: Definition) -> String {
-        match def {
+        match self.search(def) {
             (Type::Int, id, None) => format!("    %{id} = alloc i32\n"),
             (Type::Int, _, Some(Init::Const(_))) => String::new(),
             (Type::Int, id, Some(Init::Expr(expr))) => {
@@ -85,7 +85,7 @@ impl Generator {
         format!("{{{content}}}")
     }
     pub fn global_def(&mut self, def: Definition) -> String {
-        match def {
+        match self.search(def) {
             (Type::Function(ret_type, para_type), id, Some(Init::Function(para_id, block))) => {
                 self.fun_def(id, *ret_type, para_type, para_id, block)
             }

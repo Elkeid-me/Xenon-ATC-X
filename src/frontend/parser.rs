@@ -10,42 +10,27 @@ use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 use std::collections::{HashMap, HashSet};
 use std::iter::repeat;
-use std::vec;
 
 #[derive(Parser)]
 #[grammar = "frontend/sysy.pest"]
 struct SysYParser;
 
-// 符号的类型、重整化前的名字、常量初始化器
-#[derive(Debug)]
-pub enum ConstInit {
-    Num(i32),
-    List(ConstInitList),
+struct Counter {
+    value: usize,
 }
 
-#[derive(Debug)]
-pub struct Symbol(pub Type, pub String, pub Option<ConstInit>);
-
-pub struct SymbolTable {
-    table: Vec<HashMap<String, Symbol>>,
-    global_name_table: HashSet<String>,
-    local_name_table: Option<HashSet<String>>,
-}
-
-pub trait Scope {
-    fn search(&self, identifier: &str) -> Option<&Symbol>;
-    fn insert_definition(&mut self, id: String, ty: Type, init: Option<ConstInit>) -> Result<String, String>;
-    fn enter_scope(&mut self);
-    fn exit_scope(&mut self);
-    fn enter_function(&mut self);
-    fn exit_function(&mut self);
-    fn name_mangling(&self, id: String, ty: &Type) -> (String, usize);
+impl Counter {
+    fn get(&mut self) -> usize {
+        self.value += 1;
+        self.value
+    }
 }
 
 fn demangling(mut id: &str) -> &str {
     if id.len() < 2 {
         return id;
     }
+    // _I = int, _A = array, _P = pointer, _W = weird.
     match &id[0..2] {
         "_I" | "_A" | "_P" | "_W" => loop {
             id = &id[2..];
@@ -56,78 +41,14 @@ fn demangling(mut id: &str) -> &str {
         _ => return id,
     };
 }
-
-impl Scope for SymbolTable {
-    fn search(&self, mut id: &str) -> Option<&Symbol> {
-        // 去重整化
-        id = demangling(id);
-        for map in self.table.iter().rev() {
-            if let Some(info) = map.get(id) {
-                return Some(info);
-            }
-        }
-        None
-    }
-    fn insert_definition(&mut self, id: String, ty: Type, init: Option<ConstInit>) -> Result<String, String> {
-        let (mangled_id, prefix_len) = match ty {
-            Int | IntPointer(_) | IntArray(_) => self.name_mangling(id, &ty),
-            _ => (id, 0),
-        };
-        let is_const_array = matches!(init, Some(ConstInit::List(_)));
-        let original_id = &mangled_id[prefix_len..];
-        match self.table.last_mut().unwrap().insert(original_id.to_string(), Symbol(ty, mangled_id.clone(), init)) {
-            Some(Symbol(Keyword, _, _)) => Err(format!("标识符 {original_id} 是关键字，不能重定义")),
-            Some(_) => Err(format!("标识符 {original_id} 在当前作用域中已存在")),
-            None => {
-                if is_const_array {
-                    self.global_name_table.insert(mangled_id.clone());
-                } else {
-                    match &mut self.local_name_table {
-                        Some(m) => m.insert(mangled_id.clone()),
-                        None => self.global_name_table.insert(mangled_id.clone()),
-                    };
-                }
-                Ok(mangled_id)
-            }
-        }
-    }
-    fn enter_scope(&mut self) {
-        self.table.push(HashMap::new());
-    }
-    fn exit_scope(&mut self) {
-        self.table.pop();
-    }
-    fn name_mangling(&self, mut id: String, ty: &Type) -> (String, usize) {
-        let origin_len = id.len();
-        loop {
-            id = match ty {
-                Int => format!("_I{id}"),
-                IntPointer(_) => format!("_P{id}"),
-                IntArray(_) => format!("_A{id}"),
-                _ => unreachable!(),
-            };
-            if !(match &self.local_name_table {
-                Some(m) => m.contains(id.as_str()),
-                None => false,
-            }) && !(self.global_name_table.contains(id.as_str()))
-            {
-                let len = id.len() - origin_len;
-                return (id, len);
-            }
-        }
-    }
-    fn enter_function(&mut self) {
-        self.local_name_table = Some(HashSet::new());
-        self.enter_scope();
-    }
-    fn exit_function(&mut self) {
-        self.exit_scope();
-        self.local_name_table = None;
-    }
-}
 pub struct ASTBuilder {
     pub expr_parser: PrattParser<Rule>,
-    pub symbol_table: SymbolTable,
+    table: Vec<HashMap<String, Definition>>,
+    global_name_table: HashSet<String>,
+    local_name_table: Option<HashSet<String>>,
+    types: HashMap<Handler, Type>,
+    inits: HashMap<Handler, Option<Init>>,
+    counter: Counter,
 }
 
 trait InitListTrait {
@@ -246,17 +167,103 @@ impl ASTBuilder {
                 | Op::prefix(Rule::pre_inc)
                 | Op::prefix(Rule::pre_dec))
             .op(Op::postfix(Rule::post_inc) | Op::postfix(Rule::post_dec));
-        let table = vec![HashMap::new()];
-        let global_name_table = HashSet::new();
-        let symbol_table = SymbolTable {
-            table,
-            global_name_table,
-            local_name_table: None,
-        };
         Self {
             expr_parser,
-            symbol_table,
+            table: vec![HashMap::new()],
+            global_name_table: HashSet::new(),
+            local_name_table: None,
+            types: HashMap::new(),
+            inits: HashMap::new(),
+            counter: Counter { value: 0 },
         }
+    }
+
+    fn search(&self, mut id: &str) -> Option<(&Type, &str, &Option<Init>)> {
+        // 去重整化
+        id = demangling(id);
+        for map in self.table.iter().rev() {
+            if let Some((handler, id)) = map.get(id) {
+                return Some((self.types.get(handler).unwrap(), id, self.inits.get(handler).unwrap()));
+            }
+        }
+        None
+    }
+    fn insert_definition(&mut self, id: String, ty: Type, init: Option<Init>) -> Result<Definition, String> {
+        let handler = self.counter.get();
+        match (&ty, &init) {
+            (Function(_, _), None) => match self.table.last_mut().unwrap().insert(id.clone(), (handler, id.clone())) {
+                Some((old_handler, _)) => {
+                    if let Some(other_ty) = self.types.get(&old_handler) {
+                        if ty == *other_ty {
+                            self.table.last_mut().unwrap().insert(id.clone(), (old_handler, id.clone()));
+                            return Ok((old_handler, id));
+                        }
+                    }
+                    Err(format!("标识符 {id} 在当前作用域中已存在"))
+                }
+                None => {
+                    self.types.insert(handler, ty);
+                    self.inits.insert(handler, None);
+                    Ok((handler, id))
+                }
+            },
+            (_, _) => {
+                let (mangled_id, prefix_len) = self.name_mangling(id, &ty);
+                let original_id = &mangled_id[prefix_len..];
+                match self.table.last_mut().unwrap().insert(original_id.to_string(), (handler, mangled_id.clone())) {
+                    Some(_) => Err(format!("标识符 {original_id} 在当前作用域中已存在")),
+                    None => {
+                        if matches!(init, Some(Init::ConstInitList(_))) {
+                            self.global_name_table.insert(mangled_id.clone());
+                        } else {
+                            match &mut self.local_name_table {
+                                Some(m) => m.insert(mangled_id.clone()),
+                                None => self.global_name_table.insert(mangled_id.clone()),
+                            };
+                        }
+                        self.types.insert(handler, ty);
+                        self.inits.insert(handler, init);
+                        Ok((handler, mangled_id))
+                    }
+                }
+            }
+        }
+    }
+    fn add_func_def(&mut self, handler: Handler, init: Option<Init>) {
+        self.inits.insert(handler, init);
+    }
+    fn enter_scope(&mut self) {
+        self.table.push(HashMap::new());
+    }
+    fn exit_scope(&mut self) {
+        self.table.pop();
+    }
+    fn name_mangling(&self, mut id: String, ty: &Type) -> (String, usize) {
+        let origin_len = id.len();
+        loop {
+            id = match ty {
+                Int => format!("_I{id}"),
+                IntPointer(_) => format!("_P{id}"),
+                IntArray(_) => format!("_A{id}"),
+                _ => unreachable!(),
+            };
+            if !(match &self.local_name_table {
+                Some(m) => m.contains(id.as_str()),
+                None => false,
+            }) && !(self.global_name_table.contains(id.as_str()))
+            {
+                let len = id.len() - origin_len;
+                return (id, len);
+            }
+        }
+    }
+    fn enter_function(&mut self) {
+        self.local_name_table = Some(HashSet::new());
+        self.enter_scope();
+    }
+    fn exit_function(&mut self) {
+        self.exit_scope();
+        self.local_name_table = None;
     }
 
     fn iter_to_vec(&self, iter: Option<Pair<Rule>>) -> Result<Vec<usize>, String> {
@@ -358,10 +365,7 @@ impl ASTBuilder {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
                 match self.process_expr_impl(iter.next().unwrap())? {
-                    (Num(i), _, ConstEval) => {
-                        let new_id = self.symbol_table.insert_definition(id, Int, Some(ConstInit::Num(i)))?;
-                        Ok((Int, new_id, Some(Init::Const(i))))
-                    }
+                    (Num(i), _, ConstEval) => self.insert_definition(id, Int, Some(Init::Const(i))),
                     (expr, _, _) => Err(format!("{expr:?} 不是整型常量表达式")),
                 }
             }
@@ -369,16 +373,10 @@ impl ASTBuilder {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
                 match iter.next().map(|expr| self.process_expr_impl(expr)) {
-                    Some(Ok((expr, RefType::Int, _))) => {
-                        let new_id = self.symbol_table.insert_definition(id, Int, None)?;
-                        Ok((Int, new_id, Some(Init::Expr(expr))))
-                    }
+                    Some(Ok((expr, RefType::Int, _))) => self.insert_definition(id, Int, Some(Init::Expr(expr))),
                     Some(Ok((expr, _, _))) => Err(format!("{expr:?} 不是整型表达式")),
                     Some(Err(s)) => Err(s),
-                    None => {
-                        let new_id = self.symbol_table.insert_definition(id, Int, None)?;
-                        Ok((Int, new_id, None))
-                    }
+                    None => self.insert_definition(id, Int, None),
                 }
             }
             Rule::const_array_definition => {
@@ -386,11 +384,8 @@ impl ASTBuilder {
                 let id = iter.next().unwrap().as_str().to_string();
                 let len = self.iter_to_vec(iter.next())?;
                 let init_list = self.parse_init_list(iter.next().unwrap(), &len)?;
-                let mangled_id =
-                    self.symbol_table.insert_definition(id, IntArray(len.clone()), Some(ConstInit::List(init_list.clone())))?;
-                Ok((IntArray(len), mangled_id, Some(Init::ConstInitList(init_list))))
+                self.insert_definition(id, IntArray(len.clone()), Some(Init::ConstInitList(init_list)))
             }
-
             Rule::array_definition => {
                 let mut iter = pair.into_inner();
                 let id = iter.next().unwrap().as_str().to_string();
@@ -398,13 +393,9 @@ impl ASTBuilder {
                 match iter.next() {
                     Some(i) => {
                         let init_list = self.parse_init_list(i, &len)?;
-                        let mangled_id = self.symbol_table.insert_definition(id, IntArray(len.clone()), None)?;
-                        Ok((IntArray(len), mangled_id, Some(Init::InitList(init_list))))
+                        self.insert_definition(id, IntArray(len.clone()), Some(Init::InitList(init_list)))
                     }
-                    None => {
-                        let mangled_id = self.symbol_table.insert_definition(id, IntArray(len.clone()), None)?;
-                        Ok((IntArray(len), mangled_id, None))
-                    }
+                    None => self.insert_definition(id, IntArray(len.clone()), None),
                 }
             }
             _ => unreachable!(),
@@ -449,7 +440,6 @@ impl ASTBuilder {
     }
 
     fn parse_statement(&mut self, iter: Pair<Rule>, in_while: bool, ret_type: RefType) -> Result<Statement, String> {
-        // let iter = pair.into_inner().next().unwrap();
         match iter.as_rule() {
             Rule::expression => Ok(Statement::Expr(self.process_expr(iter)?)),
             Rule::return_statement => match (iter.into_inner().skip(1).next().map(|expr| self.process_expr_impl(expr)), ret_type) {
@@ -479,7 +469,7 @@ impl ASTBuilder {
     }
 
     fn parse_block(&mut self, block: Pair<Rule>, in_while: bool, ret_type: RefType) -> Result<Block, String> {
-        self.symbol_table.enter_scope();
+        self.enter_scope();
         let block = block
             .into_inner()
             .filter(|pair| !matches!(pair.as_rule(), Rule::int_keyword | Rule::const_keyword))
@@ -498,7 +488,7 @@ impl ASTBuilder {
                 _ => unreachable!(),
             })
             .collect::<Result<_, _>>();
-        self.symbol_table.exit_scope();
+        self.exit_scope();
         block
     }
 
@@ -535,17 +525,18 @@ impl ASTBuilder {
 
     fn parse_function(&mut self, func: Pair<Rule>) -> Result<Definition, String> {
         let mut iter = func.into_inner();
-        let (id, ret_ty, para_type, mut para_id) = self.parse_signature(iter.next().unwrap())?;
+        let (id, ret_type, para_type, mut para_id) = self.parse_signature(iter.next().unwrap())?;
 
-        let mangled_id = self.symbol_table.insert_definition(id, Function(Box::new(ret_ty.clone()), para_type.clone()), None)?;
-        self.symbol_table.enter_function();
+        let (handler, mangled_id) = self.insert_definition(id, Function(Box::new(ret_type.clone()), para_type.clone()), None)?;
+        self.enter_function();
         for (ty, id) in para_type.iter().zip(para_id.iter_mut()) {
-            *id = self.symbol_table.insert_definition(id.clone(), ty.clone(), None)?;
+            *id = self.insert_definition(id.clone(), ty.clone(), None)?.1;
         }
-        let block = self.parse_block(iter.next().unwrap(), false, ret_ty.to_ref_type())?;
-        self.symbol_table.exit_function();
+        let block = self.parse_block(iter.next().unwrap(), false, ret_type.to_ref_type())?;
+        self.exit_function();
 
-        Ok((Function(Box::new(ret_ty), para_type), mangled_id, Some(Init::Function(para_id, block))))
+        self.add_func_def(handler, Some(Init::Function(para_id, block)));
+        Ok((handler, mangled_id))
     }
 
     fn parse_global_item(&mut self, pair: Pair<Rule>) -> Result<Definition, String> {
@@ -559,39 +550,33 @@ impl ASTBuilder {
     }
 
     fn parse(mut self, code: &str) -> Result<TranslationUnit, String> {
-        let sysy_lib: Vec<Result<Definition, String>> = vec![
-            Ok((Function(Box::new(Int), Vec::new()), "getint".to_string(), None)),
-            Ok((Function(Box::new(Int), Vec::new()), "getch".to_string(), None)),
-            Ok((Function(Box::new(Int), vec![IntPointer(Vec::new())]), "getarray".to_string(), None)),
-            Ok((Function(Box::new(Void), vec![Int]), "putint".to_string(), None)),
-            Ok((Function(Box::new(Void), vec![Int]), "putch".to_string(), None)),
-            Ok((Function(Box::new(Void), vec![Int, IntPointer(Vec::new())]), "putarray".to_string(), None)),
-            Ok((Function(Box::new(Void), Vec::new()), "starttime".to_string(), None)),
-            Ok((Function(Box::new(Void), Vec::new()), "stoptime".to_string(), None)),
-            Ok((Keyword, "const".to_string(), None)),
-            Ok((Keyword, "else".to_string(), None)),
-            Ok((Keyword, "if".to_string(), None)),
-            Ok((Keyword, "int".to_string(), None)),
-            Ok((Keyword, "return".to_string(), None)),
-            Ok((Keyword, "void".to_string(), None)),
-        ];
+        let sysy_lib: Vec<_> = [
+            (Function(Box::new(Int), Vec::new()), "getint".to_string()),
+            (Function(Box::new(Int), Vec::new()), "getch".to_string()),
+            (Function(Box::new(Int), vec![IntPointer(Vec::new())]), "getarray".to_string()),
+            (Function(Box::new(Void), vec![Int]), "putint".to_string()),
+            (Function(Box::new(Void), vec![Int]), "putch".to_string()),
+            (Function(Box::new(Void), vec![Int, IntPointer(Vec::new())]), "putarray".to_string()),
+            (Function(Box::new(Void), Vec::new()), "starttime".to_string()),
+            (Function(Box::new(Void), Vec::new()), "stoptime".to_string()),
+        ]
+        .into_iter()
+        .map(|(ty, id)| self.insert_definition(id, ty, None))
+        .collect();
 
-        sysy_lib.iter().for_each(|item| {
-            let (ty, id, _) = item.as_ref().unwrap();
-            let _ = self.symbol_table.insert_definition(id.clone(), ty.clone(), None);
-        });
-
-        let ast = sysy_lib
-            .into_iter()
-            .chain(
-                SysYParser::parse(Rule::translation_unit, code)
-                    .unwrap()
-                    .filter(|pair| !matches!(pair.as_rule(), Rule::EOI | Rule::int_keyword | Rule::const_keyword))
-                    .map(|pair| self.parse_global_item(pair)),
-            )
-            .collect::<Result<TranslationUnit, _>>()?;
-        match self.symbol_table.search("main") {
-            Some(Symbol(Function(ret_type, para_ty), _, None)) if matches!(ret_type.as_ref(), Int) && para_ty.len() == 0 => Ok(ast),
+        let ast_iter = SysYParser::parse(Rule::translation_unit, code)
+            .unwrap()
+            .filter(|pair| !matches!(pair.as_rule(), Rule::EOI | Rule::int_keyword | Rule::const_keyword))
+            .map(|pair| self.parse_global_item(pair));
+        let ast = sysy_lib.into_iter().chain(ast_iter).collect::<Result<Vec<Definition>, _>>()?;
+        match self.search("main") {
+            Some((Function(ret_type, para_ty), _, Some(_))) if matches!(ret_type.as_ref(), Int) && para_ty.len() == 0 => {
+                Ok(TranslationUnit {
+                    ast,
+                    types: self.types,
+                    inits: self.inits,
+                })
+            }
             _ => Err("没有 main 函数，或 main 函数不是 () -> int".to_string()),
         }
     }

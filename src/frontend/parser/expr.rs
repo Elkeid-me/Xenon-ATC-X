@@ -1,5 +1,5 @@
 use crate::frontend::ast::{Expr::*, ExprCategory::*, ExprConst::*, *};
-use crate::frontend::parser::{ASTBuilder, ConstInit, Rule, Scope, Symbol};
+use crate::frontend::parser::{ASTBuilder, Rule};
 use crate::frontend::ty::*;
 use crate::risk;
 use pest::iterators::Pair;
@@ -154,16 +154,16 @@ impl ASTBuilder {
             },
 
             Num(_) => Ok((RefType::Int, RValue, ConstEval)),
-            Var(id) => match self.symbol_table.search(id) {
-                Some(Symbol(Type::Int, _, Some(ConstInit::Num(_)))) => Ok((RefType::Int, RValue, ConstEval)), // const 变量
-                Some(Symbol(Type::Int, _, None)) => Ok((RefType::Int, LValue, NonConst)),                     // 普通变量
-                Some(Symbol(Type::IntArray(_), _, Some(_))) => Err(format!("孤立的 const 数组似乎干不了什么事...")), // const 数组
-                Some(Symbol(Type::IntArray(len), _, None)) => Ok((RefType::IntPointer(&len[1..]), RValue, NonConst)), // 普通数组
-                Some(Symbol(Type::IntPointer(len), _, None)) => Ok((RefType::IntPointer(len), RValue, NonConst)), // 普通指针
+            Var(id) => match self.search(id) {
+                Some((Type::Int, _, Some(Init::Const(_)))) => Ok((RefType::Int, RValue, ConstEval)), // const 变量
+                Some((Type::Int, _, _)) => Ok((RefType::Int, LValue, NonConst)),                     // 普通变量
+                Some((Type::IntArray(_), _, Some(Init::ConstInitList(_)))) => Err(format!("孤立的 const 数组似乎干不了什么事...")), // const 数组
+                Some((Type::IntArray(len), _, _)) => Ok((RefType::IntPointer(&len[1..]), RValue, NonConst)), // 普通数组
+                Some((Type::IntPointer(len), _, _)) => Ok((RefType::IntPointer(len), RValue, NonConst)), // 普通指针
                 _ => Err(format!("标识符 {id} 在当前作用域不存在")),
             },
-            Func(id, exprs) => match self.symbol_table.search(id) {
-                Some(Symbol(Type::Function(ret_type, paras_type), _, _)) => {
+            Func(id, exprs) => match self.search(id) {
+                Some((Type::Function(ret_type, paras_type), _, _)) => {
                     if exprs.len() != paras_type.len() {
                         return Err(format!("实参列表与函数 {id} 的签名不匹配"));
                     }
@@ -184,9 +184,9 @@ impl ASTBuilder {
                 Some(_) => Err(format!("标识符 {id} 不是函数")),
                 None => Err(format!("标识符 {id} 在当前作用域中不存在")),
             },
-            Array(id, exprs, _) => match self.symbol_table.search(id) {
+            Array(id, exprs, _) => match self.search(id) {
                 // const 数组
-                Some(Symbol(Type::IntArray(len), _, Some(ConstInit::List(_)))) => match exprs.len().cmp(&len.len()) {
+                Some((Type::IntArray(len), _, Some(Init::ConstInitList(_)))) => match exprs.len().cmp(&len.len()) {
                     std::cmp::Ordering::Less => Err(format!("常量数组 {id} 不能转为指针")),
                     std::cmp::Ordering::Equal => {
                         let mut const_eval = true;
@@ -206,9 +206,9 @@ impl ASTBuilder {
                     std::cmp::Ordering::Greater => Err(format!("下标运算符不能应用于整型对象")),
                 },
                 // 普通数组
-                Some(Symbol(Type::IntArray(len), _, None)) => self.check_pointer(exprs, &len[1..]),
+                Some((Type::IntArray(len), _, _)) => self.check_pointer(exprs, &len[1..]),
                 // 普通指针
-                Some(Symbol(Type::IntPointer(len), _, _)) => self.check_pointer(exprs, len),
+                Some((Type::IntPointer(len), _, _)) => self.check_pointer(exprs, len),
                 Some(_) => Err(format!("标识符 {id} 不是数组或指针")),
                 None => Err(format!("标识符 {id} 在当前作用域中不存在")),
             },
@@ -233,9 +233,9 @@ impl ASTBuilder {
     fn simplify_impl(&self, expr: Expr) -> (Expr, bool, bool) {
         match expr {
             Num(i) => (Num(i), false, false),
-            Var(x) => match self.symbol_table.search(&x).unwrap() {
-                Symbol(_, _, Some(ConstInit::Num(i))) => (Num(*i), true, false),
-                Symbol(_, mangled_name, _) => (Var(mangled_name.clone()), false, false),
+            Var(x) => match self.search(&x).unwrap() {
+                (_, _, Some(Init::Const(i))) => (Num(*i), true, false),
+                (_, mangled_name, _) => (Var(mangled_name.to_string()), false, false),
             },
             Add(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a + b), true, false),
@@ -482,7 +482,7 @@ impl ASTBuilder {
                 (Func(id, args_simplified), s, true)
             }
             Array(id, subscripts, _) => {
-                let Symbol(ty, mangled_name, init) = self.symbol_table.search(&id).unwrap();
+                let (ty, mangled_name, init) = self.search(&id).unwrap();
                 let rvalue_int = match ty {
                     Type::IntPointer(len) => len.len() == subscripts.len() - 1,
                     Type::IntArray(len) => len.len() == subscripts.len(),
@@ -497,7 +497,7 @@ impl ASTBuilder {
                         (v, s, se)
                     });
                 match (subscripts_simplified.iter().all(|expr| matches!(expr, Num(_))), init) {
-                    (true, Some(ConstInit::List(l))) => {
+                    (true, Some(Init::ConstInitList(l))) => {
                         let mut r_ref = l;
                         for expr in subscripts_simplified.iter().take(subscripts_simplified.len() - 1) {
                             let i = expr.get_num() as usize;
@@ -513,7 +513,7 @@ impl ASTBuilder {
                             (Num(risk!(r_ref[i], ConstInitListItem::Num(i) => i)), true, false)
                         }
                     }
-                    _ => (Array(mangled_name.clone(), subscripts_simplified, rvalue_int), s, se),
+                    _ => (Array(mangled_name.to_string(), subscripts_simplified, rvalue_int), s, se),
                 }
             }
         }
