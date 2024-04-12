@@ -36,6 +36,9 @@ impl Generator {
     }
     fn search(&mut self, def: Definition) -> (Type, String, Option<Init>) {
         let (handler, id) = def;
+        // 谨慎地使用 `take. `take` 可以看作是 `std::move` 与移动构造的结合.
+        //
+        // 这里已经确定被 `take` 的变量不会被第二次使用.
         let ty = take(self.translation_unit.types.get_mut(&handler).unwrap());
         let init = take(self.translation_unit.inits.get_mut(&handler).unwrap());
         (ty, id, init)

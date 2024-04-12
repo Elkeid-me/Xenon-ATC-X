@@ -5,78 +5,92 @@ use crate::risk;
 use pest::iterators::Pair;
 
 impl ASTBuilder {
-    fn parse_expr(&self, expr: Pair<Rule>) -> Expr {
+    fn parse_expr(&self, expr: Pair<Rule>) -> Result<Expr, String> {
         self.expr_parser
             .map_primary(|exp| match exp.as_rule() {
                 Rule::expression => self.parse_expr(exp),
-                Rule::integer_bin => Num(i32::from_str_radix(&exp.as_str()[2..], 2).unwrap()),
-                Rule::integer_oct => Num(i32::from_str_radix(exp.as_str(), 8).unwrap()),
-                Rule::integer_dec => Num(i32::from_str_radix(exp.as_str(), 10).unwrap()),
-                Rule::integer_hex => Num(i32::from_str_radix(&exp.as_str()[2..], 16).unwrap()),
-                Rule::identifier => Var(exp.as_str().to_string()),
+                Rule::integer_bin => Ok(Num(i32::from_str_radix(&exp.as_str()[2..], 2).unwrap())),
+                Rule::integer_oct => Ok(Num(i32::from_str_radix(exp.as_str(), 8).unwrap())),
+                Rule::integer_dec => Ok(Num(i32::from_str_radix(exp.as_str(), 10).unwrap())),
+                Rule::integer_hex => Ok(Num(i32::from_str_radix(&exp.as_str()[2..], 16).unwrap())),
+                Rule::identifier => Ok(Var(exp.as_str().to_string())),
                 Rule::function_call => {
                     let mut iter = exp.into_inner();
-                    Func(iter.next().unwrap().as_str().to_string(), iter.map(|p| self.parse_expr(p)).collect())
+                    Ok(Func(iter.next().unwrap().as_str().to_string(), iter.map(|p| self.parse_expr(p)).collect::<Result<_, _>>()?))
                 }
                 Rule::array_element => {
                     let mut iter = exp.into_inner();
-                    Array(
+                    Ok(Array(
                         iter.next().unwrap().as_str().to_string(),
-                        iter.next().unwrap().into_inner().map(|p| self.parse_expr(p)).collect(),
+                        iter.next().unwrap().into_inner().map(|p| self.parse_expr(p)).collect::<Result<_, _>>()?,
                         false,
-                    )
+                    ))
                 }
                 _ => unreachable!(),
             })
             .map_infix(|l, op, r| match op.as_rule() {
-                Rule::custom => Func(op.into_inner().as_str().to_string(), vec![l, r]),
-                Rule::mul => Mul(Box::new(l), Box::new(r)),
-                Rule::div => Div(Box::new(l), Box::new(r)),
-                Rule::modu => Mod(Box::new(l), Box::new(r)),
-                Rule::add => Add(Box::new(l), Box::new(r)),
-                Rule::sub => Sub(Box::new(l), Box::new(r)),
+                Rule::custom => Ok(Func(op.into_inner().as_str().to_string(), vec![l?, r?])),
+                Rule::method => match r {
+                    Ok(Func(id, mut args)) => Ok(Func(id, {args.insert(0, l?); args})),
+                    _ => Err(String::new())
+                }
+                Rule::left_pipe => match l {
+                    Ok(Var(id)) => Ok(Func(id, vec![r?])),
+                    Ok(Func(id, mut args)) => Ok(Func(id, {args.push(r?); args})),
+                    _ => Err(String::new())
+                }
+                Rule::right_pipe => match r {
+                    Ok(Var(id)) => Ok(Func(id, vec![l?])),
+                    Ok(Func(id, mut args)) => Ok(Func(id, {args.push(l?); args})),
+                    _ => Err(String::new())
+                }
+                Rule::mul => Ok(Mul(Box::new(l?), Box::new(r?))),
+                Rule::div => Ok(Div(Box::new(l?), Box::new(r?))),
+                Rule::modu => Ok(Mod(Box::new(l?), Box::new(r?))),
+                Rule::add => Ok(Add(Box::new(l?), Box::new(r?))),
+                Rule::sub => Ok(Sub(Box::new(l?), Box::new(r?))),
 
-                Rule::logic_and => LogicAnd(Box::new(l), Box::new(r)),
-                Rule::logic_or => LogicOr(Box::new(l), Box::new(r)),
+                Rule::logic_and => Ok(LogicAnd(Box::new(l?), Box::new(r?))),
+                Rule::logic_or => Ok(LogicOr(Box::new(l?), Box::new(r?))),
 
-                Rule::shl => ShL(Box::new(l), Box::new(r)),
-                Rule::sar => ShR(Box::new(l), Box::new(r)),
-                Rule::xor => Xor(Box::new(l), Box::new(r)),
-                Rule::and => And(Box::new(l), Box::new(r)),
-                Rule::or => Or(Box::new(l), Box::new(r)),
+                Rule::shl => Ok(ShL(Box::new(l?), Box::new(r?))),
+                Rule::sar => Ok(ShR(Box::new(l?), Box::new(r?))),
+                Rule::xor => Ok(Xor(Box::new(l?), Box::new(r?))),
+                Rule::and => Ok(And(Box::new(l?), Box::new(r?))),
+                Rule::or => Ok(Or(Box::new(l?), Box::new(r?))),
 
-                Rule::eq => Eq(Box::new(l), Box::new(r)),
-                Rule::neq => Neq(Box::new(l), Box::new(r)),
-                Rule::grt => Grt(Box::new(l), Box::new(r)),
-                Rule::geq => Geq(Box::new(l), Box::new(r)),
-                Rule::les => Les(Box::new(l), Box::new(r)),
-                Rule::leq => Leq(Box::new(l), Box::new(r)),
+                Rule::eq => Ok(Eq(Box::new(l?), Box::new(r?))),
+                Rule::neq => Ok(Neq(Box::new(l?), Box::new(r?))),
+                Rule::grt => Ok(Grt(Box::new(l?), Box::new(r?))),
+                Rule::geq => Ok(Geq(Box::new(l?), Box::new(r?))),
+                Rule::les => Ok(Les(Box::new(l?), Box::new(r?))),
+                Rule::leq => Ok(Leq(Box::new(l?), Box::new(r?))),
 
-                Rule::assignment => Assignment(Box::new(l), Box::new(r)),
-                Rule::add_assign => AddAssign(Box::new(l), Box::new(r)),
-                Rule::sub_assign => SubAssign(Box::new(l), Box::new(r)),
-                Rule::mul_assign => MulAssign(Box::new(l), Box::new(r)),
-                Rule::div_assign => DivAssign(Box::new(l), Box::new(r)),
-                Rule::mod_assign => ModAssign(Box::new(l), Box::new(r)),
-                Rule::and_assign => AndAssign(Box::new(l), Box::new(r)),
-                Rule::or_assign => OrAssign(Box::new(l), Box::new(r)),
-                Rule::xor_assign => XorAssign(Box::new(l), Box::new(r)),
-                Rule::shl_assign => ShLAssign(Box::new(l), Box::new(r)),
-                Rule::sar_assign => SaRAssign(Box::new(l), Box::new(r)),
+                Rule::assignment => Ok(Assignment(Box::new(l?), Box::new(r?))),
+                Rule::add_assign => Ok(AddAssign(Box::new(l?), Box::new(r?))),
+                Rule::sub_assign => Ok(SubAssign(Box::new(l?), Box::new(r?))),
+                Rule::mul_assign => Ok(MulAssign(Box::new(l?), Box::new(r?))),
+                Rule::div_assign => Ok(DivAssign(Box::new(l?), Box::new(r?))),
+                Rule::mod_assign => Ok(ModAssign(Box::new(l?), Box::new(r?))),
+                Rule::and_assign => Ok(AndAssign(Box::new(l?), Box::new(r?))),
+                Rule::or_assign => Ok(OrAssign(Box::new(l?), Box::new(r?))),
+                Rule::xor_assign => Ok(XorAssign(Box::new(l?), Box::new(r?))),
+                Rule::shl_assign => Ok(ShLAssign(Box::new(l?), Box::new(r?))),
+                Rule::sar_assign => Ok(SaRAssign(Box::new(l?), Box::new(r?))),
                 _ => unreachable!(),
             })
             .map_prefix(|op, expr| match op.as_rule() {
-                Rule::logic_not => LogicNot(Box::new(expr)),
-                Rule::negative => Nega(Box::new(expr)),
+                Rule::logic_not => Ok(LogicNot(Box::new(expr?))),
+                Rule::negative => Ok(Nega(Box::new(expr?))),
                 Rule::positive => expr,
-                Rule::bit_not => Not(Box::new(expr)),
-                Rule::pre_inc => PreInc(Box::new(expr)),
-                Rule::pre_dec => PreDec(Box::new(expr)),
+                Rule::bit_not => Ok(Not(Box::new(expr?))),
+                Rule::pre_inc => Ok(PreInc(Box::new(expr?))),
+                Rule::pre_dec => Ok(PreDec(Box::new(expr?))),
                 _ => unreachable!(),
             })
             .map_postfix(|expr, op| match op.as_rule() {
-                Rule::post_inc => PostInc(Box::new(expr)),
-                Rule::post_dec => PostDec(Box::new(expr)),
+                Rule::post_inc => Ok(PostInc(Box::new(expr?))),
+                Rule::post_dec => Ok(PostDec(Box::new(expr?))),
                 _ => unreachable!(),
             })
             .parse(expr.into_inner())
@@ -159,7 +173,7 @@ impl ASTBuilder {
                 Some((Type::Int, _, _)) => Ok((RefType::Int, LValue, NonConst)),                     // 普通变量
                 Some((Type::IntArray(_), _, Some(Init::ConstInitList(_)))) => Err(format!("孤立的 const 数组似乎干不了什么事...")), // const 数组
                 Some((Type::IntArray(len), _, _)) => Ok((RefType::IntPointer(&len[1..]), RValue, NonConst)), // 普通数组
-                Some((Type::IntPointer(len), _, _)) => Ok((RefType::IntPointer(len), RValue, NonConst)), // 普通指针
+                Some((Type::IntPointer(len), _, _)) => Ok((RefType::IntPointer(len), RValue, NonConst)),     // 普通指针
                 _ => Err(format!("标识符 {id} 在当前作用域不存在")),
             },
             Func(id, exprs) => match self.search(id) {
@@ -250,15 +264,11 @@ impl ASTBuilder {
                     let b = risk!(*b, Num(b) => b);
                     (Add(Box::new(Num(a + b)), r), true, r_se)
                 }
-                ((Sub(b, r), _, r_se), (Num(a), _, _)) | ((Num(a), _, _), (Sub(b, r), _, r_se))
-                    if matches!(*b, Num(_)) =>
-                {
+                ((Sub(b, r), _, r_se), (Num(a), _, _)) | ((Num(a), _, _), (Sub(b, r), _, r_se)) if matches!(*b, Num(_)) => {
                     let b = risk!(*b, Num(b) => b);
                     (Sub(Box::new(Num(a - b)), r), true, r_se)
                 }
-                ((Sub(r, b), _, r_se), (Num(a), _, _)) | ((Num(a), _, _), (Sub(r, b), _, r_se))
-                    if matches!(*b, Num(_)) =>
-                {
+                ((Sub(r, b), _, r_se), (Num(a), _, _)) | ((Num(a), _, _), (Sub(r, b), _, r_se)) if matches!(*b, Num(_)) => {
                     let b = risk!(*b, Num(b) => b);
                     (Add(r, Box::new(Num(a - b))), true, r_se)
                 }
@@ -266,22 +276,21 @@ impl ASTBuilder {
                 | ((Mul(a, b), _, l_se), (Mul(d, c), _, r_se))
                 | ((Mul(b, a), _, l_se), (Mul(c, d), _, r_se))
                 | ((Mul(b, a), _, l_se), (Mul(d, c), _, r_se))
-                    if *a == *c => (Mul(a, Box::new(Add(b, d))), true, l_se || r_se),
+                    if *a == *c =>
+                {
+                    (Mul(a, Box::new(Add(b, d))), true, l_se || r_se)
+                }
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Add(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Sub(l, r) => match (self.simplify(*l), self.simplify(*r)) {
                 ((Num(a), _, _), (Num(b), _, _)) => (Num(a - b), true, false),
                 ((Num(0), _, _), (r, _, r_se)) => (Nega(Box::new(r)), true, r_se),
                 ((l, _, l_se), (Num(0), _, _)) => (l, true, l_se),
-                ((Num(a), _, _), (Add(r, b), _, r_se)) | ((Num(a), _, _), (Add(b, r), _, r_se))
-                    if matches!(*b, Num(_)) =>
-                {
+                ((Num(a), _, _), (Add(r, b), _, r_se)) | ((Num(a), _, _), (Add(b, r), _, r_se)) if matches!(*b, Num(_)) => {
                     let b = risk!(*b, Num(b) => b);
                     (Sub(Box::new(Num(a - b)), r), true, r_se)
                 }
-                ((Add(r, b), _, r_se), (Num(a), _, _)) | ((Add(b, r), _, r_se), (Num(a), _, _))
-                    if matches!(*b, Num(_)) =>
-                {
+                ((Add(r, b), _, r_se), (Num(a), _, _)) | ((Add(b, r), _, r_se), (Num(a), _, _)) if matches!(*b, Num(_)) => {
                     let b = risk!(*b, Num(b) => b);
                     (Add(Box::new(Num(b - a)), r), true, r_se)
                 }
@@ -307,7 +316,10 @@ impl ASTBuilder {
                 | ((Mul(a, b), _, l_se), (Mul(d, c), _, r_se))
                 | ((Mul(b, a), _, l_se), (Mul(c, d), _, r_se))
                 | ((Mul(b, a), _, l_se), (Mul(d, c), _, r_se))
-                    if *a == *c => (Mul(a, Box::new(Sub(b, d))), true, l_se || r_se),
+                    if *a == *c =>
+                {
+                    (Mul(a, Box::new(Sub(b, d))), true, l_se || r_se)
+                }
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Sub(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Mul(l, r) => match (self.simplify(*l), self.simplify(*r)) {
@@ -333,8 +345,9 @@ impl ASTBuilder {
                 ((r, _, r_se), (Num(1), _, _)) => (r, true, r_se),
                 ((r, _, r_se), (Num(-1), _, _)) => (Nega(Box::new(r)), true, r_se),
                 ((Mul(a, b), _, l_se), (c, _, _)) | ((Mul(b, a), _, l_se), (c, _, _)) if *b == c => (*a, true, l_se),
-                ((Mul(a, b), _, l_se), (Nega(c), _, _)) | ((Mul(b, a), _, l_se), (Nega(c), _, _))
-                    if *b == *c => (Nega(a), true, l_se),
+                ((Mul(a, b), _, l_se), (Nega(c), _, _)) | ((Mul(b, a), _, l_se), (Nega(c), _, _)) if *b == *c => {
+                    (Nega(a), true, l_se)
+                }
                 ((l, l_s, l_se), (r, r_s, r_se)) => (Div(Box::new(l), Box::new(r)), l_s || r_s, l_se || r_se),
             },
             Mod(l, r) => match (self.simplify(*l), self.simplify(*r)) {
@@ -520,7 +533,7 @@ impl ASTBuilder {
     }
 
     pub fn process_expr_impl(&self, expr: Pair<Rule>) -> Result<(Expr, RefType, ExprConst), String> {
-        let expr = self.parse_expr(expr);
+        let expr = self.parse_expr(expr)?;
         let (ty, _, is_const) = self.expr_check(&expr)?;
         let (expr, _, _) = self.simplify(expr);
         Ok((expr, ty, is_const))
@@ -558,8 +571,9 @@ impl PartialEq for Expr {
             (Not(l0), Not(r0)) => l0 == r0,
             (Num(l0), Num(r0)) => l0 == r0,
             (Var(l0), Var(r0)) => l0 == r0,
-            (Array(id0, subs0, _), Array(id1, subs1, _)) =>
-                id0 == id1 && subs0.len() == subs1.len() && subs0.iter().zip(subs1.iter()).all(|(l, r)| l == r),
+            (Array(id0, subs0, _), Array(id1, subs1, _)) => {
+                id0 == id1 && subs0.len() == subs1.len() && subs0.iter().zip(subs1.iter()).all(|(l, r)| l == r)
+            }
             _ => false,
         }
     }

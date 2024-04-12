@@ -9,12 +9,11 @@ impl Generator {
                 let mut id = format!("%{id}");
                 let str_0 = format!("    {tmp_id_0} = load {id}\n");
                 let tmp_id_1 = self.counter.get();
-                let (expr_eval, expr_id) = self.expr_rvalue(subscripts[0].clone());
+                let mut subscripts = subscripts.into_iter();
+                let (expr_eval, expr_id) = self.expr_rvalue(subscripts.next().unwrap());
                 let str_1 = format!("{expr_eval}\n    {tmp_id_1} = getptr {tmp_id_0}, {expr_id}\n");
                 id = tmp_id_1;
                 let str: String = subscripts
-                    .into_iter()
-                    .skip(1)
                     .map(|expr| {
                         let (expr_eval, expr_id) = self.expr_rvalue(expr);
                         let new_id = self.counter.get();

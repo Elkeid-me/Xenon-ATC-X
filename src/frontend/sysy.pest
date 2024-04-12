@@ -56,9 +56,9 @@ bit_not         =  { "~" }
 infix  = _{ custom | three_char_operator | two_char_operator | single_char_operator }
 custom = ${ "~" ~ identifier ~ "~" }
 
-single_char_operator = _{ mul | div | modu | add | sub | xor | and | or | grt | les | assignment }
-two_char_operator    = _{ logic_and | logic_or | shl | sar | eq | neq | geq
-                          | leq | add_assign | sub_assign | mul_assign | div_assign
+single_char_operator = _{ mul | div | modu | add | sub | xor | and | or | grt | les | assignment | method }
+two_char_operator    = _{ logic_and | logic_or | left_pipe | right_pipe | shl | sar | eq | neq
+                          | geq | leq | add_assign | sub_assign | mul_assign | div_assign
                           | mod_assign | and_assign | or_assign | xor_assign }
 three_char_operator  = _{ sar_assign | shl_assign }
 
@@ -95,6 +95,11 @@ or_assign  = { "|=" }
 xor_assign = { "^=" }
 shl_assign = { "<<=" }
 sar_assign = { ">>=" }
+
+right_pipe = { "|>" }
+left_pipe = { "<|" }
+
+method = { "." }
 
 array_element   = { identifier ~ array_subscript }
 array_subscript = { ("[" ~ expression ~ "]")+ }

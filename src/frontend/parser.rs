@@ -9,7 +9,7 @@ use pest::pratt_parser::{Op, PrattParser};
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 use std::collections::{HashMap, HashSet};
-use std::iter::repeat;
+use std::{iter::repeat, mem::take};
 
 #[derive(Parser)]
 #[grammar = "frontend/sysy.pest"]
@@ -159,7 +159,10 @@ impl ASTBuilder {
             .op(Op::infix(Rule::shl, Left) | Op::infix(Rule::sar, Left))
             .op(Op::infix(Rule::add, Left) | Op::infix(Rule::sub, Left))
             .op(Op::infix(Rule::mul, Left) | Op::infix(Rule::div, Left) | Op::infix(Rule::modu, Left))
+            .op(Op::infix(Rule::right_pipe, Left))
+            .op(Op::infix(Rule::left_pipe, Right))
             .op(Op::infix(Rule::custom, Left))
+            .op(Op::infix(Rule::method, Left))
             .op(Op::prefix(Rule::logic_not)
                 | Op::prefix(Rule::negative)
                 | Op::prefix(Rule::positive)
@@ -207,7 +210,7 @@ impl ASTBuilder {
                     Ok((handler, id))
                 }
             },
-            (_, _) => {
+            _ => {
                 let (mangled_id, prefix_len) = self.name_mangling(id, &ty);
                 let original_id = &mangled_id[prefix_len..];
                 match self.table.last_mut().unwrap().insert(original_id.to_string(), (handler, mangled_id.clone())) {
@@ -346,7 +349,7 @@ impl ASTBuilder {
     }
     fn parse_init_list<T>(&self, init_list: Pair<Rule>, lengths: &[usize]) -> Result<Vec<T>, String>
     where
-        T: InitListTrait + Clone,
+        T: InitListTrait,
     {
         let len_prod: Vec<usize> = lengths
             .iter()
@@ -384,7 +387,7 @@ impl ASTBuilder {
                 let id = iter.next().unwrap().as_str().to_string();
                 let len = self.iter_to_vec(iter.next())?;
                 let init_list = self.parse_init_list(iter.next().unwrap(), &len)?;
-                self.insert_definition(id, IntArray(len.clone()), Some(Init::ConstInitList(init_list)))
+                self.insert_definition(id, IntArray(len), Some(Init::ConstInitList(init_list)))
             }
             Rule::array_definition => {
                 let mut iter = pair.into_inner();
@@ -393,9 +396,9 @@ impl ASTBuilder {
                 match iter.next() {
                     Some(i) => {
                         let init_list = self.parse_init_list(i, &len)?;
-                        self.insert_definition(id, IntArray(len.clone()), Some(Init::InitList(init_list)))
+                        self.insert_definition(id, IntArray(len), Some(Init::InitList(init_list)))
                     }
-                    None => self.insert_definition(id, IntArray(len.clone()), None),
+                    None => self.insert_definition(id, IntArray(len), None),
                 }
             }
             _ => unreachable!(),
@@ -529,8 +532,8 @@ impl ASTBuilder {
 
         let (handler, mangled_id) = self.insert_definition(id, Function(Box::new(ret_type.clone()), para_type.clone()), None)?;
         self.enter_function();
-        for (ty, id) in para_type.iter().zip(para_id.iter_mut()) {
-            *id = self.insert_definition(id.clone(), ty.clone(), None)?.1;
+        for (ty, id) in para_type.into_iter().zip(para_id.iter_mut()) {
+            *id = self.insert_definition(take(id), ty, None)?.1;
         }
         let block = self.parse_block(iter.next().unwrap(), false, ret_type.to_ref_type())?;
         self.exit_function();
@@ -568,7 +571,7 @@ impl ASTBuilder {
             .unwrap()
             .filter(|pair| !matches!(pair.as_rule(), Rule::EOI | Rule::int_keyword | Rule::const_keyword))
             .map(|pair| self.parse_global_item(pair));
-        let ast = sysy_lib.into_iter().chain(ast_iter).collect::<Result<Vec<Definition>, _>>()?;
+        let ast = sysy_lib.into_iter().chain(ast_iter).collect::<Result<_, _>>()?;
         match self.search("main") {
             Some((Function(ret_type, para_ty), _, Some(_))) if matches!(ret_type.as_ref(), Int) && para_ty.len() == 0 => {
                 Ok(TranslationUnit {
