@@ -31,19 +31,28 @@ impl ASTBuilder {
             .map_infix(|l, op, r| match op.as_rule() {
                 Rule::custom => Ok(Func(op.into_inner().as_str().to_string(), vec![l?, r?])),
                 Rule::method => match r {
-                    Ok(Func(id, mut args)) => Ok(Func(id, {args.insert(0, l?); args})),
-                    _ => Err(String::new())
-                }
+                    Ok(Func(id, mut args)) => Ok(Func(id, {
+                        args.insert(0, l?);
+                        args
+                    })),
+                    _ => Err(String::new()),
+                },
                 Rule::left_pipe => match l {
                     Ok(Var(id)) => Ok(Func(id, vec![r?])),
-                    Ok(Func(id, mut args)) => Ok(Func(id, {args.push(r?); args})),
-                    _ => Err(String::new())
-                }
+                    Ok(Func(id, mut args)) => Ok(Func(id, {
+                        args.push(r?);
+                        args
+                    })),
+                    _ => Err(String::new()),
+                },
                 Rule::right_pipe => match r {
                     Ok(Var(id)) => Ok(Func(id, vec![l?])),
-                    Ok(Func(id, mut args)) => Ok(Func(id, {args.push(l?); args})),
-                    _ => Err(String::new())
-                }
+                    Ok(Func(id, mut args)) => Ok(Func(id, {
+                        args.push(l?);
+                        args
+                    })),
+                    _ => Err(String::new()),
+                },
                 Rule::mul => Ok(Mul(Box::new(l?), Box::new(r?))),
                 Rule::div => Ok(Div(Box::new(l?), Box::new(r?))),
                 Rule::modu => Ok(Mod(Box::new(l?), Box::new(r?))),

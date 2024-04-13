@@ -4,9 +4,9 @@ mod lvalue;
 mod rvalue;
 mod statement;
 
-use std::collections::LinkedList;
 use super::{ast::*, ty::Type};
 use genawaiter::{stack::let_gen, yield_};
+use std::collections::LinkedList;
 use std::mem::take;
 
 struct Counter {
@@ -28,11 +28,7 @@ struct Generator {
 
 impl Generator {
     fn new(translation_unit: TranslationUnit) -> Self {
-        Self {
-            counter: Counter { value: 0 },
-            global_const_init: Vec::new(),
-            translation_unit
-        }
+        Self { counter: Counter { value: 0 }, global_const_init: Vec::new(), translation_unit }
     }
     fn search(&mut self, def: Definition) -> (Type, String, Option<Init>) {
         let (handler, id) = def;
@@ -44,7 +40,8 @@ impl Generator {
         (ty, id, init)
     }
     fn generate(mut self) -> String {
-        let ir: LinkedList<_> = take(&mut self.translation_unit.ast).into_iter().map(|global_item| self.global_def(global_item)).collect();
+        let ir: LinkedList<_> =
+            take(&mut self.translation_unit.ast).into_iter().map(|global_item| self.global_def(global_item)).collect();
         let_gen!(ir, {
             for iter in ir {
                 for str in iter.split('\n').filter(|s| !s.is_empty()) {
