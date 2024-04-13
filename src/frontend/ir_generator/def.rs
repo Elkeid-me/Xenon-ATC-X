@@ -44,7 +44,12 @@ impl Generator {
             })
             .collect();
         let (block, _) = self.block(block, "", "");
-        format!("fun @{id}({para_list_str}){ret_type_str} {{\n{entry_id}:\n{para_alloc}\n{block}\n}}\n")
+        format!(r"fun @{id}({para_list_str}){ret_type_str} {{
+{entry_id}:
+{para_alloc}
+{block}
+}}
+")
     }
     pub fn def(&mut self, def: Definition) -> String {
         match self.search(def) {

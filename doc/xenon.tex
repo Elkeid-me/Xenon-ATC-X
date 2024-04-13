@@ -2,14 +2,29 @@
 \section{语言扩展}
 除了基础的 SysY 语言外，ATC-X 扩展了如下功能：
 \begin{enumerate}
-    \item 自定义中缀运算符。例如：
+    \item 自定义中缀运算符、管道运算符与成员访问运算符。例如：
     \begin{minted}[linenos,frame=single]{c}
-int f(int x, int y) { return (x - 1) * (y - 1); }
+int g;
+int foo(int x) { return x - 1; }
+int foo2(int x) { return x - 2; }
+void bar(int x, int y) { g = (x - 1) * (y - 1); }
 int main()
 {
     int x = 2, y = 2;
-    return x ~f~ y; // 等价于 return f(x, y);
+    x |> foo |> foo2;     // 等价于 foo2(foo(x));
+    x |> foo() |> bar(y); // 等价于 bar(y, foo(x));
+    bar(x) <| y;          // 等价于 bar(x, y);
+    x.bar(y);             // 等价于 bar(x, y);
+    x ~bar~ y;            // 等价于 bar(x, y);
 }
+    \end{minted}
+    \item 函数声明语法，允许在函数签名中不指明参数名称，对于没有参数的函数也允许使用
+    \inlinec{void} 为参数列表。例如：
+    \begin{minted}[linenos,frame=single]{c}
+int foo(int);
+int bar(int, int);
+int main(void) { return foo(bar(114, 514)); }
+int bar(int x, int) { return x + 1919; }
     \end{minted}
     \item 各类复合赋值运算符，如 \inlinec{+=}，\inlinec{*=}。
     \item 复合运算符返回左值，这意味着可以写 \inlinec{x = y = z;} 这种代码。
@@ -60,12 +75,7 @@ int main()
 \subsection{语义检查}
 遍历抽象语法树，进行语义检查和常量表达式计算。这一步使用大量的递归函数。
 
-实际实现中，第二次解析和语义检查是合并在一起的。除此之外，还会进行以下两个化简：
-\begin{enumerate}
-    \item 表达式化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}
-    \item （简易的）不可达语句消除。任意 \inlinec{return} 后的语句，或是循环内 \inlinec{break} / \inlinec{continue}
-    后的语句，都会直接忽略。
-\end{enumerate}
+实际实现中，第二次解析和语义检查是合并在一起的。除此之外，还会进行表达式化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}。
 
 为了生成 IR 时更加方便，还会进行两个操作：
 \begin{enumerate}
@@ -184,7 +194,7 @@ fun @main(): i32 {
 可以看到，某些基本块存在连续的 \inlinec{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR。分为两个部分：
 \begin{enumerate}
     \item 基本块内部，第一个 \inlinec{jump}、\inlinec{br} 或 \inlinec{ret} 后的所有指令被忽略；
-    \item 如果某个基本块是空的，则根据函数返回值类型添加 \inlinec{ret 0} 或 \inlinec{ret}。
+    \item 如果某个基本块的结尾不是 \inlinec{jump}、\inlinec{br} 或 \inlinec{ret}，则根据函数返回值类型添加 \inlinec{ret 0} 或 \inlinec{ret}。
 \end{enumerate}
 
 上述 IR 后处理的结果为：

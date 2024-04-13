@@ -6,19 +6,33 @@ Xenon 是某大学编译原理课程的作业，其目标是把 SysY 编译为 R
 
 Xenon 已被废弃，Xenon ATC-X 是其后继项目。ATC-X = Advanced Technology Complier-X（先进技术编译器-X）。除标准 SysY 语言外，ATC-X 还支持一些语言扩展：
 
-1. 自定义中缀运算符。例如：
+1. 自定义中缀运算符、管道运算符与成员访问运算符。例如：
     ```c
-    int f(int x, int y) { return (x - 1) * (y - 1); }
+    int g;
+    int foo(int x) { return x - 1; }
+    int foo2(int x) { return x - 2; }
+    void bar(int x, int y) { g = (x - 1) * (y - 1); }
     int main()
     {
         int x = 2, y = 2;
-        return x ~f~ y; // 等价于 return f(x, y);
+        x |> foo |> foo2;     // 等价于 foo2(foo(x));
+        x |> foo() |> bar(y); // 等价于 bar(y, foo(x));
+        bar(x) <| y;          // 等价于 bar(x, y);
+        x.bar(y);             // 等价于 bar(x, y);
+        x ~bar~ y;            // 等价于 bar(x, y);
     }
     ```
-2. 各类复合赋值运算符，如 `+=`，`*=`。
-3. 复合运算符返回左值，这意味着可以写 `x = y = z;` 这种代码。
-4. 自增自减运算符，其中前缀自增自减返回左值。例如 `++x = 1;`
-5. 以常量下标取得的常量数组元素可以参与编译期常量表达式求值，例如：
+2. 函数声明语法，允许在函数签名中不指明参数名称，对于没有参数的函数也允许使用 `void` 为参数列表。例如：
+    ```c
+    int foo(int);
+    int bar(int, int);
+    int main() { return foo(bar(114, 514)); }
+    int bar(int x, int) { return x + 1919; }
+    ```
+3. 各类复合赋值运算符，如 `+=`，`*=`。
+4. 复合运算符返回左值，这意味着可以写 `x = y = z;` 这种代码。
+5. 自增自减运算符，其中前缀自增自减返回左值。例如 `++x = 1;`
+6. 以常量下标取得的常量数组元素可以参与编译期常量表达式求值，例如：
     ```c
     int main()
     {

@@ -111,7 +111,10 @@ impl Generator {
             let (l_eval, l_id) = self.expr_lvalue(l);
             let tmp_id_1 = self.counter.get();
             let tmp_id_2 = self.counter.get();
-            (format!("{r_eval}{l_eval}    {tmp_id_1} = load {l_id}\n    {tmp_id_2} = {op} {tmp_id_1}, {r_id}\n   store {tmp_id_2}, {l_id}\n"), tmp_id_2)
+            (format!(r"{r_eval}{l_eval}    {tmp_id_1} = load {l_id}
+    {tmp_id_2} = {op} {tmp_id_1}, {r_id}
+   store {tmp_id_2}, {l_id}
+"), tmp_id_2)
         } else {
             let r_eval = self.expr_dvalue(r);
             let (l_eval, l_id) = self.expr_lvalue(l);
@@ -123,8 +126,16 @@ impl Generator {
         let tmp_id_1 = self.counter.get();
         let tmp_id_2 = self.counter.get();
         match (rvalue, prefix) {
-            (true, true) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}\n"), tmp_id_2),
-            (true, false) => (format!("{expr_eval}\n    {tmp_id_1} = load {expr_id}\n    {tmp_id_2} = {op} {expr_id}, 1\n    store {tmp_id_2}, {expr_id}\n"), tmp_id_1),
+            (true, true) => (format!(r"{expr_eval}
+    {tmp_id_1} = load {expr_id}
+    {tmp_id_2} = {op} {expr_id}, 1
+    store {tmp_id_2}, {expr_id}
+"), tmp_id_2),
+            (true, false) => (format!(r"{expr_eval}\n
+    {tmp_id_1} = load {expr_id}
+    {tmp_id_2} = {op} {expr_id}, 1
+    store {tmp_id_2}, {expr_id}
+"), tmp_id_1),
             (false, true) => (format!("{expr_eval}\n"), expr_id),
             (false, false) => unreachable!()
         }
