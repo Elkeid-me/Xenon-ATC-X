@@ -65,7 +65,7 @@ impl Generator {
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
                 format!("    %{} = alloc {}\n", id, ty_str)
             }
-            _ => unimplemented!(),
+            _ => unreachable!(),
         }
     }
     pub fn init_list_to_str(len: &[usize], list: InitList) -> String {

@@ -30,11 +30,21 @@ impl Generator {
     fn new(translation_unit: TranslationUnit) -> Self {
         Self { counter: Counter { value: 0 }, global_const_init: Vec::new(), translation_unit }
     }
+    /// 谨慎地使用 `take()`. `take()` 可以看作是 C++ 中 `std::move()` 与移动构造的结合.
+    ///
+    /// 这里已经确定被 `take()` 的变量不会被第二次使用. 但是有一个例外. 考虑下面的代码：
+    /// ```c
+    /// int f(int, int);
+    /// int main() { return f(1, 1); }
+    /// int f(int a, int b) { return a + b; }
+    /// ```
+    /// 在语法树中，第一个 `f` 和第二个 `f` 有相同的 `handler`，而第一个 `f` 生成 IR 之后，
+    /// 其 `type` 和 `init` 都被 `take()` 走了. 又因为 `take::<&mut T>()` 会在原来的位置留下
+    /// `T.default()`，实际上第二个 `f` 变成了 `const int`.
+    ///
+    /// 编译器依赖此 bug 运行. 不要改动.
     fn search(&mut self, def: Definition) -> (Type, String, Option<Init>) {
         let (handler, id) = def;
-        // 谨慎地使用 `take. `take` 可以看作是 `std::move` 与移动构造的结合.
-        //
-        // 这里已经确定被 `take` 的变量不会被第二次使用.
         let ty = take(self.translation_unit.types.get_mut(&handler).unwrap());
         let init = take(self.translation_unit.inits.get_mut(&handler).unwrap());
         (ty, id, init)
