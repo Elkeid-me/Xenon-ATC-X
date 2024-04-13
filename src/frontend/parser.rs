@@ -197,7 +197,7 @@ impl ASTBuilder {
             (Function(_, _), None) => match self.table.last_mut().unwrap().insert(id.clone(), (handler, id.clone())) {
                 Some((old_handler, _)) => {
                     if let Some(other_ty) = self.types.get(&old_handler) {
-                        if ty == *other_ty {
+                        if ty == *other_ty && self.inits.get(&old_handler).unwrap().is_none() {
                             self.table.last_mut().unwrap().insert(id.clone(), (old_handler, id.clone()));
                             return Ok((old_handler, id));
                         }
@@ -495,32 +495,38 @@ impl ASTBuilder {
         block
     }
 
-    fn parse_signature(&self, pair: Pair<Rule>) -> Result<(String, Type, Vec<Type>, Vec<String>), String> {
+    fn parse_signature(&self, pair: Pair<Rule>) -> Result<(String, Type, Vec<Type>, Vec<Option<String>>), String> {
         let mut iter = pair.into_inner();
         let return_type = match iter.next().unwrap().as_rule() {
             Rule::void_keyword => Void,
             _ => Int,
         };
         let id = iter.next().unwrap().as_str().to_string();
-        let paras = iter.next().unwrap().into_inner().map(|para| match para.as_rule() {
-            Rule::var_parameter_def => Ok((para.into_inner().skip(1).next().unwrap().as_str().to_string(), Int)),
-            Rule::ptr_parameter_def => {
-                let mut iter = para.into_inner().skip(1);
-                let id = iter.next().unwrap().as_str().to_string();
-                let lengths = self.iter_to_vec(iter.next())?;
-                Ok((id, IntPointer(lengths)))
-            }
-            _ => unreachable!(),
-        });
         let mut para_id = Vec::new();
         let mut para_type = Vec::new();
-        for item in paras {
-            match item {
-                Ok((id, ty)) => {
-                    para_id.push(id);
-                    para_type.push(ty);
+        for para in iter.next().unwrap().into_inner() {
+            match para.as_rule() {
+                Rule::var_parameter => {
+                    para_id.push(Some(para.into_inner().skip(1).next().unwrap().as_str().to_string()));
+                    para_type.push(Int);
                 }
-                Err(s) => return Err(s),
+                Rule::ptr_parameter => {
+                    let mut iter = para.into_inner().skip(1);
+                    let id = iter.next().unwrap().as_str().to_string();
+                    let lengths = self.iter_to_vec(iter.next())?;
+                    para_id.push(Some(id));
+                    para_type.push(IntPointer(lengths));
+                }
+                Rule::var_parameter_no_name => {
+                    para_id.push(None);
+                    para_type.push(Int);
+                }
+                Rule::ptr_parameter_no_name => {
+                    let lengths = self.iter_to_vec(para.into_inner().skip(1).next())?;
+                    para_id.push(None);
+                    para_type.push(IntPointer(lengths));
+                }
+                _ => unreachable!(),
             }
         }
         Ok((id, return_type, para_type, para_id))
@@ -533,7 +539,9 @@ impl ASTBuilder {
         let (handler, mangled_id) = self.insert_definition(id, Function(Box::new(ret_type.clone()), para_type.clone()), None)?;
         self.enter_function();
         for (ty, id) in para_type.into_iter().zip(para_id.iter_mut()) {
-            *id = self.insert_definition(take(id), ty, None)?.1;
+            if let Some(i) = id {
+                *i = self.insert_definition(take(i), ty, None)?.1;
+            }
         }
         let block = self.parse_block(iter.next().unwrap(), false, ret_type.to_ref_type())?;
         self.exit_function();
@@ -546,6 +554,10 @@ impl ASTBuilder {
         match pair.as_rule() {
             Rule::variable_definition | Rule::array_definition | Rule::const_variable_definition | Rule::const_array_definition => {
                 self.parse_definition(pair)
+            }
+            Rule::func_decl => {
+                let (id, ret_type, para_type, _) = self.parse_signature(pair)?;
+                self.insert_definition(id, Function(Box::new(ret_type), para_type), None)
             }
             Rule::func_def => self.parse_function(pair),
             _ => unreachable!(),
@@ -574,11 +586,7 @@ impl ASTBuilder {
         let ast = sysy_lib.into_iter().chain(ast_iter).collect::<Result<_, _>>()?;
         match self.search("main") {
             Some((Function(ret_type, para_ty), _, Some(_))) if matches!(ret_type.as_ref(), Int) && para_ty.len() == 0 => {
-                Ok(TranslationUnit {
-                    ast,
-                    types: self.types,
-                    inits: self.inits,
-                })
+                Ok(TranslationUnit { ast, types: self.types, inits: self.inits })
             }
             _ => Err("没有 main 函数，或 main 函数不是 () -> int".to_string()),
         }

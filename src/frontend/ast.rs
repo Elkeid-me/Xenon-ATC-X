@@ -18,7 +18,7 @@ pub type Definition = (Handler, String);
 /// - [`Init::ConstInitList`] 和 [`Init::InitList`] 同理.
 #[derive(Debug)]
 pub enum Init {
-    Function(Vec<String>, Block),
+    Function(Vec<Option<String>>, Block),
     Expr(Expr),
     Const(i32),
     InitList(InitList),

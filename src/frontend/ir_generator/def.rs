@@ -17,7 +17,7 @@ impl Generator {
         id: String,
         ret_type: Type,
         para_type: Vec<Type>,
-        para_id: Vec<String>,
+        para_id: Vec<Option<String>>,
         block: Block,
     ) -> String {
         let ret_type_str = match ret_type {
@@ -28,14 +28,20 @@ impl Generator {
         let para_list_str = para_id
             .iter()
             .zip(para_type.iter())
-            .map(|(id, ty)| format!("@{id}: {}", ty.to_koopa_type_str()))
+            .map(|(id, ty)| if let Some(id) = id { format!("@{id}: {}", ty.to_koopa_type_str()) } else { ty.to_koopa_type_str() })
             .collect::<Vec<_>>()
             .join(", ");
         let entry_id = self.counter.get();
         let para_alloc: String = para_id
             .into_iter()
             .zip(para_type.into_iter())
-            .map(|(id, ty)| format!("    %{} = alloc {}\n    store @{}, %{}\n", id, ty.to_koopa_type_str(), id, id))
+            .map(|(id, ty)| {
+                if let Some(id) = id {
+                    format!("    %{} = alloc {}\n    store @{}, %{}\n", id, ty.to_koopa_type_str(), id, id)
+                } else {
+                    String::new()
+                }
+            })
             .collect();
         let (block, _) = self.block(block, "", "");
         format!("fun @{id}({para_list_str}){ret_type_str} {{\n{entry_id}:\n{para_alloc}\n{block}\n}}\n")
