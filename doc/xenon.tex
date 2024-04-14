@@ -1,21 +1,28 @@
-
 \section{语言扩展}
 除了基础的 SysY 语言外，ATC-X 扩展了如下功能：
 \begin{enumerate}
-    \item 自定义中缀运算符、管道运算符与成员访问运算符。例如：
+    \item 自定义中缀运算符，例如：
     \begin{minted}[linenos,frame=single]{c}
-int g;
-int foo(int x) { return x - 1; }
-int foo2(int x) { return x - 2; }
-void bar(int x, int y) { g = (x - 1) * (y - 1); }
-int main()
-{
+int foo(int x) { /* do something */ }
+int foo2(int x) { /* do something */ }
+int bar(int x, int y) { /* do something */ }
+int main() {
+    int x = 2, y = 2;
+    x ~bar~ y;            // 等价于 bar(x, y);
+}
+    \end{minted}
+    \item 管道运算符与成员访问运算符，例如：
+    \begin{minted}[linenos,frame=single]{c}
+int foo(int x) { /* do something */ }
+int foo2(int x) { /* do something */ }
+int bar(int x, int y) { /* do something */ }
+int main() {
     int x = 2, y = 2;
     x |> foo |> foo2;     // 等价于 foo2(foo(x));
     x |> foo() |> bar(y); // 等价于 bar(y, foo(x));
     bar(x) <| y;          // 等价于 bar(x, y);
-    x.bar(y);             // 等价于 bar(x, y);
-    x ~bar~ y;            // 等价于 bar(x, y);
+    ((x.bar(y)) ~bar~ 114)
+      |> foo;             // 等价于 foo(bar(bar(x, y), 114));
 }
     \end{minted}
     \item 函数声明语法，允许在函数签名中不指明参数名称，对于没有参数的函数也允许使用
@@ -44,8 +51,7 @@ ATC-X 包含 3 个部分：
     \item 将单独的 \inlinec{\r}，或 \inlinec{\r\n} 替换为 \inlinec{\n}。
     \item 对于所有的以反斜杠结尾的行，将其与下一行连在一起。例如：
     \begin{minted}[linenos,frame=single]{c}
-int main()
-{
+int main() {
     int a = 1; // \
     int a;
     return a;
@@ -53,8 +59,7 @@ int main()
     \end{minted}
     被处理为：
     \begin{minted}[linenos,frame=single]{c}
-int main()
-{
+int main() {
     int a = 1; //     int a;
     return a;
 }
@@ -66,107 +71,65 @@ int main()
 前端负责将不包含注释的 SysY 源代码翻译为 KoopaIR。前端的处理步骤为：
 \subsection{第一次解析}
 使用 crate pest 将代码处理为语法树。注意，这里语法树使用的是 pest 中 \inlinerust{Pairs<Rule>} 的形式。
-
-使用 pest 的原因是 pest 基于解析表达式文法，可以轻松绕过悬垂 else 问题。
-
-注意，只使用 pest parser 难以处理运算符优先级。在 pest parser 的基础上，表达式又会经过 \inlinerust{PrattParser<Rule>} 的解析。
+使用 pest 的原因是 pest 基于解析表达式文法，可以轻松绕过悬垂 else 问题。注意，只使用 pest parser
+难以处理运算符优先级。在 pest parser 的基础上，表达式又会经过 \inlinerust{PrattParser<Rule>} 的解析。
 \subsection{第二次解析}
 遍历上述 \inlinerust{Pairs<Rule>} 的语法树，转为我定义的抽象语法树。这一步使用大量的递归函数。
 \subsection{语义检查}
 遍历抽象语法树，进行语义检查和常量表达式计算。这一步使用大量的递归函数。
 
-实际实现中，第二次解析和语义检查是合并在一起的。除此之外，还会进行表达式化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}。
+实际实现中，第二次解析和语义检查是合并在一起的。除此之外，还会进行表达式化简，如
+\inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}。
 
 为了生成 IR 时更加方便，还会进行两个操作：
 \begin{enumerate}
     \item 在初始化列表中填充 0；
-    \item 名字重整。
+    \item 名字重整，即为每个标识符赋予一个局部或全局唯一的名字。对局部常量数组有特殊处理，因为生成 IR
+    时局部常量数组会被放至全局。
 \end{enumerate}
 
-名字重整是这样的操作：代码
+代码：
 \begin{minted}[linenos,frame=single]{c}
-int f() { const int x[1] = {1}; }
-const int x[1] = {2};
-int main()
-{
-    const int x[1] = {x[0] + 3};
-    int y = x[0] + 1;
-    {
-        int x = x[0];
-        int y = y + x;
-    }
-    return x[0];
-}
+int f(int a[]) {
+    const int x[1] = {1};    int y = 1, z[1] = {1};
+    { int x = x[0], y = x; } }
+int g(int a[]) {
+    const int x[1] = {1};    int y = 1, z[1] = {1};
+    { int x = x[0], y = x; } }
 \end{minted}
 被重整化为：
 \begin{minted}[linenos,frame=single]{c}
-int f() { const int _Ax[1] = {1}; }
-const int _A_Ax[1] = {2};
-int main()
-{
-    const int _A_A_Ax[1] = {_A_Ax[0] + 3};
-    int _Iy = _A_A_Ax[0] + 1;
-    {
-        int _Ix = _A_A_Ax[0];
-        int _I_Iy = _Iy + _Ix;
-    }
-    return _A_A_A[0];
-}
+int f(int _Pa[]) {
+    const int _Ax[1] = {1};    int _Iy = 1, _Az[1] = {1};
+    { int _Ix = _Ax[0], _I_Iy = _Ix; } }
+int g(int _Pa[]) {
+    const int _A_Ax[1] = {1};    int _Iy = 1, _Az[1] = {1};
+    { int _Ix = _A_Ax[0], _I_Iy = _Ix; } }
 \end{minted}
-考虑到 C 标准中将“下划线+大写字母”开头的标识符视为保留名，这样做是完全合理的。请注意，这里对常量数组做了特殊处理，因为生成 IR 时所有的局部
-常量数组会被提升至全局，因此需要一个唯一的名字。
+考虑到 C 标准中将“下划线+大写字母”开头的标识符视为保留名，这样做是完全合理的。
 \subsection{生成 IR}
 \subsubsection{生成粗 IR}
 前端直接生成文本形式的 IR。同样地，这一步使用大量的递归函数。
 
 SysY 中的表达式被进一步分为三类：
 \begin{enumerate}
-    \item 左值表达式，这种表达式计算的值是一个内存地址，如语句 \inlinec{x = 1;} 中的表达式 \inlinec{x} 是左值表达式；
-    鉴于 ATC-X 对 SysY 做了语法扩展，语句 \inlinec{(x = y) = z;} 中的表达式 \inlinec{x} 和 \inlinec{x = y} 都是左值表达式。
+    \item 左值表达式，这种表达式计算的值是一个内存地址，如语句 \inlinec{x = 1;} 中的表达式
+    \inlinec{x} 是左值表达式；
+    鉴于 ATC-X 对 SysY 做了语法扩展，语句 \inlinec{(x = y) = z;} 中的表达式 \inlinec{x}
+    和 \inlinec{x = y} 都是左值表达式。
     \item 右值表达式，这种表达式计算的值只是一个值。
-    \item 弃值表达式，这种表达式计算的值会被舍弃。如语句 \inlinec{x = 1;} 中的 \inlinec{x = 1} 是弃值表达式，这个语句只会执行赋值的
-    副作用而不产生值；
+    \item 弃值表达式，这种表达式计算的值会被舍弃。如语句 \inlinec{x = 1;} 中的 \inlinec{x = 1} 是
+    弃值表达式，这个语句只会执行赋值的副作用而不产生值；
 \end{enumerate}
-
-一个综合例子。语句 \inlinec{(x = f() + x) = (z = w);} 被翻译为 IR：
-\begin{minted}[linenos,frame=single]{c}
-%5 = load %_Iw
-store %5, %_Iz
-call @f()
-store %5, %_Ix
-\end{minted}
-在这之中，表达式 \inlinec{z = w} 是右值表达式，\inlinec{x = f() + x} 是左值表达式，而 \inlinec{(x = f() + x) = (z = w)} 整体是弃值表达式。
-上面的 IR 是优化过的，优化逻辑为：如果一个赋值表达式的值类别是左值，则这个赋值表达式等号右侧的表达式应该视为弃值而不是右值。未优化的版本为：
-\begin{minted}[linenos,frame=single]{c}
-%5 = load %_Iw
-store %5, %_Iz
-%7 = call @f()
-%8 = load %_Ix
-%6 = add %7, %8
-store %6, %_Ix
-store %5, %_Ix
-\end{minted}
-三类表达式都有专门的函数处理。处理左值表达式和右值表达式的函数返回类型为 \inlinerust{(String, String)}，分别为计算这个表达式的过程和表达式的 ID。
-仍然以上述 \inlinec{(x = f() + x) = (z = w);} 语句为例。计算右值表达式 \inlinerust{(z = w)} 的过程为：
-\begin{minted}[linenos,frame=single]{c}
-%5 = load %_Iw
-store %5, %_Iz
-\end{minted}
-而这个表达式的 ID 是 \inlinec{%5}。
 \subsubsection{IR 后处理}
 上述生成的 IR 称为粗 IR，因为它有很多不符合规范的情况。例如，代码：
 \begin{minted}[linenos,frame=single]{c}
 void f() { }
-
-int main()
-{
-    int x;
-    {
-        while(1)
-            continue;
-        return x + 1;
-    }
-    return x + 1;
+int main() {
+  { while(1)
+      continue;
+    return 0; }
+  return 0;
 }
 \end{minted}
 会生成 IR：
@@ -176,25 +139,22 @@ fun @f() {
 }
 fun @main(): i32 {
 %3:
-    %_Ix = alloc i32
     jump %6
 %6:
     jump %6
     jump %6
 %7:
-    %10 = load %_Ix
-    %9 = add %10, 1
-    ret %9
-    %12 = load %_Ix
-    %11 = add %12, 1
-    ret %11
+    ret 0
+    ret 0
 }
 \end{minted}
 
-可以看到，某些基本块存在连续的 \inlinec{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR。分为两个部分：
+可以看到，某些基本块存在连续的 \inlinec{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR，
+分为两个部分：
 \begin{enumerate}
     \item 基本块内部，第一个 \inlinec{jump}、\inlinec{br} 或 \inlinec{ret} 后的所有指令被忽略；
-    \item 如果某个基本块的结尾不是 \inlinec{jump}、\inlinec{br} 或 \inlinec{ret}，则根据函数返回值类型添加 \inlinec{ret 0} 或 \inlinec{ret}。
+    \item 如果某个基本块的结尾不是 \inlinec{jump}、\inlinec{br} 或 \inlinec{ret}，则根据函数
+    返回值类型添加 \inlinec{ret 0} 或 \inlinec{ret}。
 \end{enumerate}
 
 上述 IR 后处理的结果为：
@@ -205,13 +165,12 @@ fun @f() {
 }
 fun @main(): i32 {
 %3:
-    %_Ix = alloc i32
     jump %6
 %6:
     jump %6
-    %7:
-    %10 = load %_Ix
-    %9 = add %10, 1
-    ret %9
+%7:
+    ret 0
 }
 \end{minted}
+\section{其他}
+本文的标题致敬 Wolfram Mathematica 参考文档《关于内部实现的一些注释》。

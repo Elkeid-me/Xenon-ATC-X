@@ -35,7 +35,7 @@ impl ASTBuilder {
                         args.insert(0, l?);
                         args
                     })),
-                    _ => Err(String::new()),
+                    _ => Err(format!("{r:?} 不是标识符或函数调用表达式.")),
                 },
                 Rule::left_pipe => match l {
                     Ok(Var(id)) => Ok(Func(id, vec![r?])),
@@ -43,7 +43,7 @@ impl ASTBuilder {
                         args.push(r?);
                         args
                     })),
-                    _ => Err(String::new()),
+                    _ => Err(format!("{l:?} 不是标识符或函数调用表达式.")),
                 },
                 Rule::right_pipe => match r {
                     Ok(Var(id)) => Ok(Func(id, vec![l?])),
@@ -51,7 +51,7 @@ impl ASTBuilder {
                         args.push(l?);
                         args
                     })),
-                    _ => Err(String::new()),
+                    _ => Err(format!("{r:?} 不是标识符或函数调用表达式.")),
                 },
                 Rule::mul => Ok(Mul(Box::new(l?), Box::new(r?))),
                 Rule::div => Ok(Div(Box::new(l?), Box::new(r?))),
