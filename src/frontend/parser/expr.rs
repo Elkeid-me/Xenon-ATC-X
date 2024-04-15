@@ -1,7 +1,6 @@
 use crate::frontend::ast::{Expr::*, ExprCategory::*, ExprConst::*, *};
 use crate::frontend::parser::{ASTBuilder, Rule};
-use crate::frontend::ty::*;
-use crate::risk;
+use crate::{frontend::ty::*, risk};
 use pest::iterators::Pair;
 
 impl ASTBuilder {
@@ -11,7 +10,7 @@ impl ASTBuilder {
                 Rule::expression => self.parse_expr(exp),
                 Rule::integer_bin => Ok(Num(i32::from_str_radix(&exp.as_str()[2..], 2).unwrap())),
                 Rule::integer_oct => Ok(Num(i32::from_str_radix(exp.as_str(), 8).unwrap())),
-                Rule::integer_dec => Ok(Num(i32::from_str_radix(exp.as_str(), 10).unwrap())),
+                Rule::integer_dec => Ok(Num(exp.as_str().parse().unwrap())),
                 Rule::integer_hex => Ok(Num(i32::from_str_radix(&exp.as_str()[2..], 16).unwrap())),
                 Rule::identifier => Ok(Var(exp.as_str().to_string())),
                 Rule::function_call => {
@@ -115,7 +114,7 @@ impl ASTBuilder {
         match (exprs.len() - 1).cmp(&len.len()) {
             std::cmp::Ordering::Less => Ok((RefType::IntPointer(&len[exprs.len()..]), RValue, NonConst)),
             std::cmp::Ordering::Equal => Ok((RefType::Int, LValue, NonConst)),
-            std::cmp::Ordering::Greater => Err(format!("下标运算符不能应用于整型对象")),
+            std::cmp::Ordering::Greater => Err("下标运算符不能应用于整型对象".to_string()),
         }
     }
 
@@ -180,9 +179,11 @@ impl ASTBuilder {
             Var(id) => match self.search(id) {
                 Some((Type::Int, _, Some(Init::Const(_)))) => Ok((RefType::Int, RValue, ConstEval)), // const 变量
                 Some((Type::Int, _, _)) => Ok((RefType::Int, LValue, NonConst)),                     // 普通变量
-                Some((Type::IntArray(_), _, Some(Init::ConstInitList(_)))) => Err(format!("孤立的 const 数组似乎干不了什么事...")), // const 数组
+                Some((Type::IntArray(_), _, Some(Init::ConstInitList(_)))) => {
+                    Err("孤立的 const 数组似乎干不了什么事...".to_string())
+                } // const 数组
                 Some((Type::IntArray(len), _, _)) => Ok((RefType::IntPointer(&len[1..]), RValue, NonConst)), // 普通数组
-                Some((Type::IntPointer(len), _, _)) => Ok((RefType::IntPointer(len), RValue, NonConst)),     // 普通指针
+                Some((Type::IntPointer(len), _, _)) => Ok((RefType::IntPointer(len), RValue, NonConst)), // 普通指针
                 _ => Err(format!("标识符 {id} 在当前作用域不存在")),
             },
             Func(id, exprs) => match self.search(id) {
@@ -226,7 +227,7 @@ impl ASTBuilder {
                             Ok((RefType::Int, RValue, NonConst))
                         }
                     }
-                    std::cmp::Ordering::Greater => Err(format!("下标运算符不能应用于整型对象")),
+                    std::cmp::Ordering::Greater => Err("下标运算符不能应用于整型对象".to_string()),
                 },
                 // 普通数组
                 Some((Type::IntArray(len), _, _)) => self.check_pointer(exprs, &len[1..]),

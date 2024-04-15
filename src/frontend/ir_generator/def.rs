@@ -1,6 +1,7 @@
 use super::super::{ast::*, ty::Type};
 use super::Generator;
 use crate::risk;
+use std::fmt::Write;
 
 impl Generator {
     pub fn fun_decl(&self, id: String, ret_type: Type, para_type: Vec<Type>) -> String {
@@ -9,7 +10,7 @@ impl Generator {
             Type::Void => "",
             _ => unreachable!(),
         };
-        let para_list_str = para_type.iter().map(|ty| format!("{}", ty.to_koopa_type_str())).collect::<Vec<_>>().join(", ");
+        let para_list_str = para_type.iter().map(|ty| ty.to_koopa_type_str().to_string()).collect::<Vec<_>>().join(", ");
         format!("decl @{id}({para_list_str}){ret_type_str}\n")
     }
     pub fn fun_def(
@@ -34,7 +35,7 @@ impl Generator {
         let entry_id = self.counter.get();
         let para_alloc: String = para_id
             .into_iter()
-            .zip(para_type.into_iter())
+            .zip(para_type)
             .map(|(id, ty)| {
                 if let Some(id) = id {
                     format!("    %{} = alloc {}\n    store @{}, %{}\n", id, ty.to_koopa_type_str(), id, id)
@@ -44,12 +45,14 @@ impl Generator {
             })
             .collect();
         let (block, _) = self.block(block, "", "");
-        format!(r"fun @{id}({para_list_str}){ret_type_str} {{
+        format!(
+            r"fun @{id}({para_list_str}){ret_type_str} {{
 {entry_id}:
 {para_alloc}
 {block}
 }}
-")
+"
+        )
     }
     pub fn def(&mut self, def: Definition) -> String {
         match self.search(def) {
@@ -125,24 +128,18 @@ impl Generator {
     }
     pub fn local_array_impl(&mut self, len: &[usize], id: &str, list: Vec<InitListItem>) -> String {
         match len.len() {
-            1 => list
-                .into_iter()
-                .enumerate()
-                .map(|(i, item)| {
-                    let (expr_eval, expr_id) = self.expr_rvalue(risk!(item, InitListItem::Expr(expr) => expr));
-                    let tmp_id = self.counter.get();
-                    format!("{expr_eval}    {tmp_id} = getelemptr {id}, {i}\n    store {expr_id}, {tmp_id}\n")
-                })
-                .collect(),
-            _ => list
-                .into_iter()
-                .enumerate()
-                .map(|(i, item)| {
-                    let tmp_id = self.counter.get();
-                    let str = self.local_array_impl(&len[1..], &tmp_id, risk!(item, InitListItem::InitList(list) => *list));
-                    format!("    {tmp_id} = getelemptr {id}, {i}\n{str}")
-                })
-                .collect(),
+            1 => list.into_iter().enumerate().fold(String::new(), |mut output, (i, item)| {
+                let (expr_eval, expr_id) = self.expr_rvalue(risk!(item, InitListItem::Expr(expr) => expr));
+                let tmp_id = self.counter.get();
+                let _ = write!(output, "{expr_eval}    {tmp_id} = getelemptr {id}, {i}\n    store {expr_id}, {tmp_id}\n");
+                output
+            }),
+            _ => list.into_iter().enumerate().fold(String::new(), |mut output, (i, item)| {
+                let tmp_id = self.counter.get();
+                let str = self.local_array_impl(&len[1..], &tmp_id, risk!(item, InitListItem::InitList(list) => *list));
+                let _ = write!(output, "    {tmp_id} = getelemptr {id}, {i}\n{str}");
+                output
+            }),
         }
     }
     pub fn local_array(&mut self, ty: Type, id: String, list: Vec<InitListItem>) -> String {

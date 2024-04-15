@@ -38,8 +38,8 @@ fn demangling(mut id: &str) -> &str {
                 return id;
             }
         },
-        _ => return id,
-    };
+        _ => id,
+    }
 }
 pub struct ASTBuilder {
     pub expr_parser: PrattParser<Rule>,
@@ -355,7 +355,7 @@ impl ASTBuilder {
             .iter()
             .rev()
             .scan(1, |l, &r| {
-                *l = *l * r;
+                *l *= r;
                 Some(*l)
             })
             .collect();
@@ -429,7 +429,7 @@ impl ASTBuilder {
             Box::new(self.parse_if_while_helper(iter.next().unwrap(), in_while, ret_type)?),
             match iter.next() {
                 Some(block) => Box::new(self.parse_if_while_helper(block, in_while, ret_type)?),
-                None => Box::new(Vec::new()),
+                None => Box::default(),
             },
         ))
     }
@@ -445,7 +445,7 @@ impl ASTBuilder {
     fn parse_statement(&mut self, iter: Pair<Rule>, in_while: bool, ret_type: RefType) -> Result<Statement, String> {
         match iter.as_rule() {
             Rule::expression => Ok(Statement::Expr(self.process_expr(iter)?)),
-            Rule::return_statement => match (iter.into_inner().skip(1).next().map(|expr| self.process_expr_impl(expr)), ret_type) {
+            Rule::return_statement => match (iter.into_inner().nth(1).map(|expr| self.process_expr_impl(expr)), ret_type) {
                 (None, RefType::Void) => Ok(Statement::Return(None)),
                 (Some(Ok((e, RefType::Int, _))), RefType::Int) => Ok(Statement::Return(Some(e))),
                 (Some(Err(s)), _) => Err(s),
@@ -507,7 +507,7 @@ impl ASTBuilder {
         for para in iter.next().unwrap().into_inner() {
             match para.as_rule() {
                 Rule::var_parameter => {
-                    para_id.push(Some(para.into_inner().skip(1).next().unwrap().as_str().to_string()));
+                    para_id.push(Some(para.into_inner().nth(1).unwrap().as_str().to_string()));
                     para_type.push(Int);
                 }
                 Rule::ptr_parameter => {
@@ -522,7 +522,7 @@ impl ASTBuilder {
                     para_type.push(Int);
                 }
                 Rule::ptr_parameter_no_name => {
-                    let lengths = self.iter_to_vec(para.into_inner().skip(1).next())?;
+                    let lengths = self.iter_to_vec(para.into_inner().nth(1))?;
                     para_id.push(None);
                     para_type.push(IntPointer(lengths));
                 }
@@ -585,7 +585,7 @@ impl ASTBuilder {
             .map(|pair| self.parse_global_item(pair));
         let ast = sysy_lib.into_iter().chain(ast_iter).collect::<Result<_, _>>()?;
         match self.search("main") {
-            Some((Function(ret_type, para_ty), _, Some(_))) if matches!(ret_type.as_ref(), Int) && para_ty.len() == 0 => {
+            Some((Function(ret_type, para_ty), _, Some(_))) if matches!(ret_type.as_ref(), Int) && para_ty.is_empty() => {
                 Ok(TranslationUnit { ast, types: self.types, inits: self.inits })
             }
             _ => Err("没有 main 函数，或 main 函数不是 () -> int".to_string()),

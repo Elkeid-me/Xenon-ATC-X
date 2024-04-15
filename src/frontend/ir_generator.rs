@@ -6,8 +6,7 @@ mod statement;
 
 use super::{ast::*, ty::Type};
 use genawaiter::{stack::let_gen, yield_};
-use std::collections::LinkedList;
-use std::mem::take;
+use std::{collections::LinkedList, fmt::Write, mem::take};
 
 struct Counter {
     value: usize,
@@ -102,7 +101,10 @@ impl Generator {
             }
         });
         let global = self.global_const_init.join("");
-        let ir: String = add_ret.into_iter().map(|s| format!("{s}\n")).collect();
+        let ir: String = add_ret.into_iter().fold(String::new(), |mut output, s| {
+            let _ = writeln!(output, "{s}");
+            output
+        });
         format!("{global}{ir}")
     }
     fn assign_expr_helper(&mut self, l: Expr, r: Expr, op: &str, rvalue: bool) -> (String, String) {
@@ -111,10 +113,15 @@ impl Generator {
             let (l_eval, l_id) = self.expr_lvalue(l);
             let tmp_id_1 = self.counter.get();
             let tmp_id_2 = self.counter.get();
-            (format!(r"{r_eval}{l_eval}    {tmp_id_1} = load {l_id}
+            (
+                format!(
+                    r"{r_eval}{l_eval}    {tmp_id_1} = load {l_id}
     {tmp_id_2} = {op} {tmp_id_1}, {r_id}
    store {tmp_id_2}, {l_id}
-"), tmp_id_2)
+"
+                ),
+                tmp_id_2,
+            )
         } else {
             let r_eval = self.expr_dvalue(r);
             let (l_eval, l_id) = self.expr_lvalue(l);
@@ -126,18 +133,28 @@ impl Generator {
         let tmp_id_1 = self.counter.get();
         let tmp_id_2 = self.counter.get();
         match (rvalue, prefix) {
-            (true, true) => (format!(r"{expr_eval}
+            (true, true) => (
+                format!(
+                    r"{expr_eval}
     {tmp_id_1} = load {expr_id}
     {tmp_id_2} = {op} {expr_id}, 1
     store {tmp_id_2}, {expr_id}
-"), tmp_id_2),
-            (true, false) => (format!(r"{expr_eval}\n
+"
+                ),
+                tmp_id_2,
+            ),
+            (true, false) => (
+                format!(
+                    r"{expr_eval}\n
     {tmp_id_1} = load {expr_id}
     {tmp_id_2} = {op} {expr_id}, 1
     store {tmp_id_2}, {expr_id}
-"), tmp_id_1),
+"
+                ),
+                tmp_id_1,
+            ),
             (false, true) => (format!("{expr_eval}\n"), expr_id),
-            (false, false) => unreachable!()
+            (false, false) => unreachable!(),
         }
     }
 }
