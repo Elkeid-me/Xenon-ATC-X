@@ -1,10 +1,10 @@
 [package]
 name = "xenon-atc-x"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
 koopa = "0.0.7"
-pest = "2.7.9"
-pest_derive = "2.7.9"
+pest = "2.7.8"
+pest_derive = "2.7.8"
 genawaiter = "0.99.1"
