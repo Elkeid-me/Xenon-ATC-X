@@ -287,7 +287,7 @@ impl ASTBuilder {
                         NonConst => Err(format!("{expr:?} 不是整型常量表达式")),
                     }
                 })
-                .collect::<Result<Vec<_>, _>>(),
+                .collect::<Result<_, _>>(),
             None => Ok(Vec::new()),
         }
     }

@@ -1,6 +1,10 @@
 \section{语言扩展}
-除了基础的 SysY 语言外，ATC-X 扩展了如下功能：
+除标准 SysY 语言外，ATC-X 扩展了如下功能：
 \begin{enumerate}
+    \item 二进制整数字面量，如：
+    \begin{minted}[linenos,frame=single]{c}
+int a = 0b11011111101010010; // a = 114514
+    \end{minted}
     \item 自定义中缀运算符，例如：
     \begin{minted}[linenos,frame=single]{c}
 int foo(int x) { /* do something */ }

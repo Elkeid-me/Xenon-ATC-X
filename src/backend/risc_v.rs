@@ -70,42 +70,145 @@ pub enum Reg {
     T6,
 }
 
+#[derive(Debug, Clone)]
+pub enum Directive {
+    Text,
+    Global(String),
+    Data,
+    Zero(usize),
+    Word(Vec<i32>),
+}
+
+#[derive(Debug, Clone)]
+pub enum RiscVItem {
+    Label(String),
+    Inst(Inst),
+    Directive(Directive),
+}
+
+pub type RiscV = Vec<RiscVItem>;
+
 impl Display for Reg {
     fn fmt(&self, f: &mut Formatter) -> Result {
         let s = match self {
-            Reg::Zero => "zero",
-            Reg::Ra => "ra",
-            Reg::Sp => "sp",
-            Reg::Gp => "gp",
-            Reg::Tp => "tp",
-            Reg::T0 => "t0",
-            Reg::T1 => "t1",
-            Reg::T2 => "t2",
-            Reg::Fp => "fp",
-            Reg::S1 => "s1",
-            Reg::A0 => "a0",
-            Reg::A1 => "a1",
-            Reg::A2 => "a2",
-            Reg::A3 => "a3",
-            Reg::A4 => "a4",
-            Reg::A5 => "a5",
-            Reg::A6 => "a6",
-            Reg::A7 => "a7",
-            Reg::S2 => "s2",
-            Reg::S3 => "s3",
-            Reg::S4 => "s4",
-            Reg::S5 => "s5",
-            Reg::S6 => "s6",
-            Reg::S7 => "s7",
-            Reg::S8 => "s8",
-            Reg::S9 => "s9",
-            Reg::S10 => "s10",
-            Reg::S11 => "s11",
-            Reg::T3 => "t3",
-            Reg::T4 => "t4",
-            Reg::T5 => "t5",
-            Reg::T6 => "t6",
+            Self::Zero => "zero",
+            Self::Ra => "ra",
+            Self::Sp => "sp",
+            Self::Gp => "gp",
+            Self::Tp => "tp",
+            Self::T0 => "t0",
+            Self::T1 => "t1",
+            Self::T2 => "t2",
+            Self::Fp => "fp",
+            Self::S1 => "s1",
+            Self::A0 => "a0",
+            Self::A1 => "a1",
+            Self::A2 => "a2",
+            Self::A3 => "a3",
+            Self::A4 => "a4",
+            Self::A5 => "a5",
+            Self::A6 => "a6",
+            Self::A7 => "a7",
+            Self::S2 => "s2",
+            Self::S3 => "s3",
+            Self::S4 => "s4",
+            Self::S5 => "s5",
+            Self::S6 => "s6",
+            Self::S7 => "s7",
+            Self::S8 => "s8",
+            Self::S9 => "s9",
+            Self::S10 => "s10",
+            Self::S11 => "s11",
+            Self::T3 => "t3",
+            Self::T4 => "t4",
+            Self::T5 => "t5",
+            Self::T6 => "t6",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
+    }
+}
+
+pub trait RiscVTrait {
+    fn add_label(&mut self, label: String);
+    fn add_inst(&mut self, inst: Inst);
+    fn add_directive(&mut self, directive: Directive);
+}
+
+impl RiscVTrait for RiscV {
+    fn add_label(&mut self, label: String) {
+        self.push(RiscVItem::Label(label));
+    }
+    fn add_inst(&mut self, inst: Inst) {
+        self.push(RiscVItem::Inst(inst));
+    }
+    fn add_directive(&mut self, directive: Directive) {
+        self.push(RiscVItem::Directive(directive));
+    }
+}
+
+impl Display for Inst {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            Self::Beqz(rs, label) => write!(f, "beqz {rs}, {label}"),
+            Self::Bnez(rs, label) => write!(f, "bnez {rs}, {label}"),
+            Self::J(label) => write!(f, "j {label}"),
+            Self::Call(label) => write!(f, "call {label}"),
+            Self::Ret => write!(f, "ret"),
+
+            Self::Lw(rd, offset, rs) => write!(f, "lw {rd}, {offset}({rs})"),
+            Self::Sw(rd, offset, rs) => write!(f, "sw {rd}, {offset}({rs})"),
+
+            Self::Seqz(rd, rs) => write!(f, "seqz {rd}, {rs}"),
+            Self::Snez(rd, rs) => write!(f, "snez {rd}, {rs}"),
+
+            Self::Addi(rd, rs, imm) => write!(f, "addi {rd}, {rs}, {imm}"),
+            Self::Xori(rd, rs, imm) => write!(f, "xori {rd}, {rs}, {imm}"),
+            Self::Ori(rd, rs, imm) => write!(f, "ori {rd}, {rs}, {imm}"),
+            Self::Andi(rd, rs, imm) => write!(f, "andi {rd}, {rs}, {imm}"),
+            Self::Slli(rd, rs, imm) => write!(f, "slli {rd}, {rs}, {imm}"),
+
+            Self::Add(rd, rs1, rs2) => write!(f, "add {rd}, {rs1}, {rs2}"),
+            Self::Sub(rd, rs1, rs2) => write!(f, "sub {rd}, {rs1}, {rs2}"),
+            Self::Slt(rd, rs1, rs2) => write!(f, "slt {rd}, {rs1}, {rs2}"),
+            Self::Sgt(rd, rs1, rs2) => write!(f, "sgt {rd}, {rs1}, {rs2}"),
+            Self::Xor(rd, rs1, rs2) => write!(f, "xor {rd}, {rs1}, {rs2}"),
+            Self::Or(rd, rs1, rs2) => write!(f, "or {rd}, {rs1}, {rs2}"),
+            Self::And(rd, rs1, rs2) => write!(f, "and {rd}, {rs1}, {rs2}"),
+            Self::Sll(rd, rs1, rs2) => write!(f, "sll {rd}, {rs1}, {rs2}"),
+            Self::Srl(rd, rs1, rs2) => write!(f, "srl {rd}, {rs1}, {rs2}"),
+            Self::Sra(rd, rs1, rs2) => write!(f, "sra {rd}, {rs1}, {rs2}"),
+            Self::Mul(rd, rs1, rs2) => write!(f, "mul {rd}, {rs1}, {rs2}"),
+            Self::Div(rd, rs1, rs2) => write!(f, "div {rd}, {rs1}, {rs2}"),
+            Self::Rem(rd, rs1, rs2) => write!(f, "rem {rd}, {rs1}, {rs2}"),
+
+            Self::Li(rd, imm) => write!(f, "li {rd}, {imm}"),
+            Self::La(rd, address) => write!(f, "la {rd}, {address}"),
+            Self::Mv(rd, rs) => write!(f, "mv {rd}, {rs}"),
+        }
+    }
+}
+
+impl Display for Directive {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            Directive::Text => write!(f, ".text"),
+            Directive::Global(label) => write!(f, ".global {label}"),
+            Directive::Data => write!(f, ".date"),
+            Directive::Zero(len) => write!(f, ".zero {len}"),
+            Directive::Word(nums) => {
+                let data: Vec<_> = nums.iter().map(i32::to_string).collect();
+                write!(f, ".word {}", data.as_slice().join(", "))
+            }
+        }
+    }
+}
+
+impl Display for RiscVItem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            RiscVItem::Label(label) => writeln!(f, "{label}:"),
+            RiscVItem::Inst(inst) => writeln!(f, "    {inst}"),
+            RiscVItem::Directive(directive) => writeln!(f, "{directive}"),
+        }
     }
 }

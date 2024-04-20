@@ -1,3 +1,4 @@
+#![allow(warnings)]
 mod arg_parse;
 mod backend;
 mod frontend;
@@ -27,8 +28,12 @@ fn compile() -> Result<(), Box<dyn std::error::Error>> {
     let mut f = File::create(output)?;
     let ir = generate_ir(&code)?;
     match mode {
-        Mode::Koopa => f.write_fmt(format_args!("{ir}"))?,
-        Mode::RiscV => f.write_fmt(format_args!("{}", generate_asm(ir)))?,
+        Mode::Koopa => write!(f, "{ir}")?,
+        Mode::RiscV => {
+            for item in generate_asm(ir) {
+                write!(f, "{item}")?;
+            }
+        }
         _ => todo!(),
     }
     Ok(())
@@ -36,7 +41,7 @@ fn compile() -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     if let Err(s) = compile() {
-        println!("{}", s);
+        println!("{s}");
         std::process::exit(0);
     }
 }

@@ -15,7 +15,7 @@ struct Counter {
 impl Counter {
     fn get(&mut self) -> String {
         self.value += 1;
-        format!("%{}", self.value)
+        format!("%_L_name_{}", self.value)
     }
 }
 
