@@ -34,7 +34,7 @@ pub enum Inst {
     Mv(Reg, Reg),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Reg {
     Zero,
     Ra,
@@ -193,7 +193,7 @@ impl Display for Directive {
         match self {
             Directive::Text => write!(f, ".text"),
             Directive::Global(label) => write!(f, ".global {label}"),
-            Directive::Data => write!(f, ".date"),
+            Directive::Data => write!(f, ".data"),
             Directive::Zero(len) => write!(f, ".zero {len}"),
             Directive::Word(nums) => {
                 let data: Vec<_> = nums.iter().map(i32::to_string).collect();

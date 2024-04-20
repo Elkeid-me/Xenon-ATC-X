@@ -1,6 +1,6 @@
 use super::risc_v::*;
 use crate::risk;
-use koopa::ir::{entities::ValueData, BasicBlock, BinaryOp, FunctionData, Program, TypeKind, Value, ValueKind::*};
+use koopa::ir::{entities::ValueData, BasicBlock, BinaryOp, FunctionData, Program, Type, TypeKind, Value, ValueKind::*};
 use std::{cmp::max, collections::HashMap, vec};
 
 const CALL_REGS: [Reg; 8] = [Reg::A0, Reg::A1, Reg::A2, Reg::A3, Reg::A4, Reg::A5, Reg::A6, Reg::A7];
@@ -37,20 +37,20 @@ fn generate_context(func_data: &FunctionData) -> Context {
     frame_size += args_size;
     let mut vars = HashMap::new();
     for node in func_data.layout().bbs().nodes() {
-        vars.extend(node.insts().keys().map(|&value| match func_data.dfg().value(value).kind() {
-            Alloc(_) => {
-                let size = risk!(func_data.dfg().value(value).ty().kind(), TypeKind::Pointer(base) => base.size() as i32);
-                let offset = frame_size;
-                frame_size += size;
-                (value, offset)
+        for &inst in node.insts().keys() {
+            match func_data.dfg().value(inst).kind() {
+                Alloc(_) => {
+                    let size = risk!(func_data.dfg().value(inst).ty().kind(), TypeKind::Pointer(base) => base.size() as i32);
+                    vars.insert(inst, frame_size);
+                    frame_size += size;
+                }
+                _ => {
+                    let size = func_data.dfg().value(inst).ty().size() as i32;
+                    vars.insert(inst, frame_size);
+                    frame_size += size;
+                }
             }
-            _ => {
-                let size = func_data.dfg().value(value).ty().size() as i32;
-                let offset = frame_size;
-                frame_size += size;
-                (value, offset)
-            }
-        }));
+        }
     }
     let save_ra = !calls.is_empty();
     if save_ra {
@@ -80,7 +80,7 @@ fn load_value(
                 RiscV::new()
             } else {
                 // 第 9 个参数的 index 为 8，而第 9 个参数的 offset 为 0.
-                let offset = (index as i32 - 8) * 4;
+                let offset = (index - 8) as i32 * 4 + context.frame_size;
                 if offset <= 2047 {
                     vec![RiscVItem::Inst(Inst::Lw(*reg, offset, Reg::Sp))]
                 } else {
@@ -128,32 +128,33 @@ fn get_ptr(
     base: Value,
     index: Value,
     step: i32,
-) -> RiscV {
+) -> (RiscV, Reg) {
     let mut insts = RiscV::new();
     let mut base_reg = Reg::T0;
     let mut index_reg = Reg::T1;
     let step_reg = Reg::T2;
-    match func_data.dfg().value(base).kind() {
-        Alloc(_) => {
-            let offset = *context.vars.get(&base).unwrap();
-            if offset <= 2047 {
-                insts.add_inst(Inst::Addi(Reg::T0, Reg::Sp, offset));
-            } else {
-                insts.add_inst(Inst::Li(Reg::T0, offset));
-                insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
+    if global_vars.contains_key(&base) {
+        let addr = global_vars.get(&base).unwrap();
+        insts.add_inst(Inst::La(Reg::T0, addr.clone()))
+    } else {
+        match func_data.dfg().value(base).kind() {
+            Alloc(_) => {
+                let offset = *context.vars.get(&base).unwrap();
+                if offset <= 2047 {
+                    insts.add_inst(Inst::Addi(base_reg, Reg::Sp, offset));
+                } else {
+                    insts.add_inst(Inst::Li(base_reg, offset));
+                    insts.add_inst(Inst::Add(base_reg, Reg::Sp, base_reg));
+                }
             }
+            _ => insts.extend(load_value(global_vars, context, func_data, base, &mut base_reg)),
         }
-        GlobalAlloc(_) => {
-            let addr = global_vars.get(&base).unwrap();
-            insts.add_inst(Inst::La(Reg::T0, addr.clone()))
-        }
-        _ => insts.extend(load_value(global_vars, context, func_data, base, &mut base_reg)),
     }
     insts.extend(load_value(global_vars, context, func_data, index, &mut index_reg));
     insts.add_inst(Inst::Li(step_reg, step));
     insts.add_inst(Inst::Mul(index_reg, index_reg, step_reg));
     insts.add_inst(Inst::Add(base_reg, base_reg, index_reg));
-    insts
+    (insts, base_reg)
 }
 
 fn gen_value(
@@ -169,42 +170,43 @@ fn gen_value(
     match value_kind {
         Load(load) => {
             let src = load.src();
-            match func_data.dfg().value(src).kind() {
-                Alloc(_) => {
-                    let offset = *context.vars.get(&src).unwrap();
-                    if offset <= 2047 {
-                        insts.add_inst(Inst::Lw(Reg::T0, offset, Reg::Sp));
-                    } else {
-                        insts.add_inst(Inst::Li(Reg::T0, offset));
-                        insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
-                        insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+            if global_vars.contains_key(&src) {
+                let addr = global_vars.get(&src).unwrap();
+                insts.add_inst(Inst::La(Reg::T0, addr.clone()));
+                insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+            } else {
+                match func_data.dfg().value(src).kind() {
+                    Alloc(_) => {
+                        let offset = *context.vars.get(&src).unwrap();
+                        if offset <= 2047 {
+                            insts.add_inst(Inst::Lw(Reg::T0, offset, Reg::Sp));
+                        } else {
+                            insts.add_inst(Inst::Li(Reg::T0, offset));
+                            insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
+                            insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                        }
                     }
-                }
-                GlobalAlloc(_) => {
-                    let addr = global_vars.get(&src).unwrap();
-                    insts.add_inst(Inst::La(Reg::T0, addr.clone()));
-                    insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
-                }
-                _ => {
-                    let offset = *context.vars.get(&src).unwrap();
-                    if offset <= 2047 {
-                        insts.add_inst(Inst::Lw(Reg::T0, offset, Reg::Sp));
-                        insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
-                    } else {
-                        insts.add_inst(Inst::Li(Reg::T0, offset));
-                        insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
-                        insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
-                        insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                    _ => {
+                        let offset = *context.vars.get(&src).unwrap();
+                        if offset <= 2047 {
+                            insts.add_inst(Inst::Lw(Reg::T0, offset, Reg::Sp));
+                            insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                        } else {
+                            insts.add_inst(Inst::Li(Reg::T0, offset));
+                            insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
+                            insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                            insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                        }
                     }
                 }
             }
-            let offset = *context.vars.get(&src).unwrap();
+            let offset = *context.vars.get(&value).unwrap();
             if offset <= 2047 {
                 insts.add_inst(Inst::Sw(Reg::T0, offset, Reg::Sp));
             } else {
-                insts.add_inst(Inst::Li(Reg::T0, offset));
-                insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
-                insts.add_inst(Inst::Sw(Reg::T0, 0, Reg::T0));
+                insts.add_inst(Inst::Li(Reg::T1, offset));
+                insts.add_inst(Inst::Add(Reg::T1, Reg::Sp, Reg::T1));
+                insts.add_inst(Inst::Sw(Reg::T0, 0, Reg::T1));
             }
         }
         Store(store) => {
@@ -212,32 +214,33 @@ fn gen_value(
             let dst = store.dest();
             let mut src_reg = Reg::T0;
             insts.extend(load_value(global_vars, context, func_data, src, &mut src_reg));
-            match func_data.dfg().value(dst).kind() {
-                Alloc(_) => {
-                    let offset = *context.vars.get(&src).unwrap();
-                    if offset <= 2047 {
-                        insts.add_inst(Inst::Sw(src_reg, offset, Reg::Sp));
-                    } else {
-                        insts.add_inst(Inst::Li(Reg::T0, offset));
-                        insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
-                        insts.add_inst(Inst::Sw(src_reg, 0, Reg::T0));
+            if global_vars.contains_key(&dst) {
+                let addr = global_vars.get(&dst).unwrap();
+                insts.add_inst(Inst::La(Reg::T1, addr.clone()));
+                insts.add_inst(Inst::Sw(src_reg, 0, Reg::T1));
+            } else {
+                match func_data.dfg().value(dst).kind() {
+                    Alloc(_) => {
+                        let offset = *context.vars.get(&dst).unwrap();
+                        if offset <= 2047 {
+                            insts.add_inst(Inst::Sw(src_reg, offset, Reg::Sp));
+                        } else {
+                            insts.add_inst(Inst::Li(Reg::T1, offset));
+                            insts.add_inst(Inst::Add(Reg::T1, Reg::Sp, Reg::T1));
+                            insts.add_inst(Inst::Sw(src_reg, 0, Reg::T1));
+                        }
                     }
-                }
-                GlobalAlloc(_) => {
-                    let addr = global_vars.get(&src).unwrap();
-                    insts.add_inst(Inst::La(Reg::T0, addr.clone()));
-                    insts.add_inst(Inst::Sw(src_reg, 0, Reg::T0));
-                }
-                _ => {
-                    let offset = *context.vars.get(&src).unwrap();
-                    if offset <= 2047 {
-                        insts.add_inst(Inst::Lw(Reg::T0, offset, Reg::Sp));
-                        insts.add_inst(Inst::Sw(src_reg, 0, Reg::T0));
-                    } else {
-                        insts.add_inst(Inst::Li(Reg::T0, offset));
-                        insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
-                        insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
-                        insts.add_inst(Inst::Sw(src_reg, 0, Reg::T0));
+                    _ => {
+                        let offset = *context.vars.get(&dst).unwrap();
+                        if offset <= 2047 {
+                            insts.add_inst(Inst::Lw(Reg::T1, offset, Reg::Sp));
+                            insts.add_inst(Inst::Sw(src_reg, 0, Reg::T1));
+                        } else {
+                            insts.add_inst(Inst::Li(Reg::T1, offset));
+                            insts.add_inst(Inst::Add(Reg::T1, Reg::Sp, Reg::T1));
+                            insts.add_inst(Inst::Lw(Reg::T1, 0, Reg::T1));
+                            insts.add_inst(Inst::Sw(src_reg, 0, Reg::T1));
+                        }
                     }
                 }
             }
@@ -245,16 +248,18 @@ fn gen_value(
         GetPtr(ptr) => {
             let base = ptr.src();
             let index = ptr.index();
-            let step = risk!(value_type.kind(), TypeKind::Pointer(base) => base.size());
-            insts.extend(get_ptr(ir, global_vars, context, func_data, base, index, step as i32));
-            insts.extend(store_value(global_vars, context, func_data, value, Reg::T1));
+            let step: usize = risk!(value_type.kind(), TypeKind::Pointer(base) => base.size());
+            let (inst, base_reg) = get_ptr(ir, global_vars, context, func_data, base, index, step as i32);
+            insts.extend(inst);
+            insts.extend(store_value(global_vars, context, func_data, value, base_reg));
         }
         GetElemPtr(ptr) => {
             let base = ptr.src();
             let index = ptr.index();
             let step = risk!(value_type.kind(), TypeKind::Pointer(base) => base.size());
-            insts.extend(get_ptr(ir, global_vars, context, func_data, base, index, step as i32));
-            insts.extend(store_value(global_vars, context, func_data, value, Reg::T1));
+            let (inst, base_reg) = get_ptr(ir, global_vars, context, func_data, base, index, step as i32);
+            insts.extend(inst);
+            insts.extend(store_value(global_vars, context, func_data, value, base_reg));
         }
         Binary(binary) => {
             let lhs = binary.lhs();
@@ -313,7 +318,18 @@ fn gen_value(
         Call(func) => {
             let args = func.args();
             for (&value, &reg) in args.iter().zip(CALL_REGS.iter()) {
-                insts.extend(store_value(global_vars, context, func_data, value, reg));
+                let mut reg_ = reg;
+                insts.extend(load_value(global_vars, context, func_data, value, &mut reg_));
+                if reg_ != reg {
+                    insts.add_inst(Inst::Mv(reg, reg_))
+                }
+            }
+            if args.len() > 8 {
+                for (i, &arg) in args[8..].iter().enumerate() {
+                    let mut reg = Reg::T0;
+                    insts.extend(load_value(global_vars, context, func_data, arg, &mut reg));
+                    insts.add_inst(Inst::Sw(reg, i as i32 * 4, Reg::Sp));
+                }
             }
             insts.add_inst(Inst::Call(ir.func(func.callee()).name()[1..].to_string()));
             if value_type.is_i32() {
@@ -324,7 +340,7 @@ fn gen_value(
             if let Some(value) = ret.value() {
                 let mut rd = Reg::A0;
                 insts.extend(load_value(global_vars, context, func_data, value, &mut rd));
-                if !matches!(rd, Reg::A0) {
+                if rd != Reg::A0 {
                     insts.add_inst(Inst::Mv(Reg::A0, rd))
                 }
             }
@@ -382,30 +398,27 @@ fn flatten_init_list(ir: &Program, init: Value) -> Vec<i32> {
 }
 fn global_var(ir: &Program, value_data: &ValueData) -> RiscV {
     let mut insts = RiscV::new();
-    match value_data.kind() {
-        GlobalAlloc(alloc) => {
-            let name = &value_data.name().as_deref().unwrap()[1..];
-            insts.add_directive(Directive::Data);
-            insts.add_directive(Directive::Global(name.to_string()));
-            insts.add_label(name.to_string());
-            match ir.borrow_value(alloc.init()).kind() {
-                ZeroInit(_) => {
-                    let size = risk!(value_data.ty().kind(), TypeKind::Pointer(base) => base.size());
-                    insts.add_directive(Directive::Zero(size));
-                }
-                _ => insts.add_directive(Directive::Word(flatten_init_list(ir, alloc.init()))),
-            }
+    let init = risk!(value_data.kind(), GlobalAlloc(alloc) => alloc.init());
+    let name = &value_data.name().as_deref().unwrap()[1..];
+    insts.add_directive(Directive::Data);
+    insts.add_directive(Directive::Global(name.to_string()));
+    insts.add_label(name.to_string());
+    match ir.borrow_value(init).kind() {
+        ZeroInit(_) => {
+            let size = risk!(value_data.ty().kind(), TypeKind::Pointer(base) => base.size());
+            insts.add_directive(Directive::Zero(size));
         }
-        _ => unreachable!(),
+        _ => insts.add_directive(Directive::Word(flatten_init_list(ir, init))),
     }
     insts
 }
 pub fn generate(ir: Program) -> RiscV {
-    let global_vars =
-        ir.borrow_values().iter().map(|(&value, value_data)| (value, value_data.name().as_ref().unwrap()[1..].to_string())).collect();
-    ir.borrow_values()
-        .values()
-        .flat_map(|value_data| global_var(&ir, value_data))
-        .chain(ir.funcs().values().flat_map(|func_data| func(&ir, func_data, &global_vars)))
-        .collect()
+    Type::set_ptr_size(4);
+    let mut global_vars = HashMap::new();
+    let mut global_insts = RiscV::new();
+    for (&value, value_data) in ir.borrow_values().iter().filter(|(_, value_data)| matches!(value_data.kind(), GlobalAlloc(_))) {
+        global_vars.insert(value, value_data.name().as_ref().unwrap()[1..].to_string());
+        global_insts.extend(global_var(&ir, value_data));
+    }
+    global_insts.into_iter().chain(ir.funcs().values().flat_map(|func_data| func(&ir, func_data, &global_vars))).collect()
 }

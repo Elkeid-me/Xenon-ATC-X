@@ -24,6 +24,9 @@ macro_rules! risk {
 
 fn compile() -> Result<(), Box<dyn std::error::Error>> {
     let (mode, input, output) = parse(std::env::args())?;
+    // let mode = Mode::RiscV;
+    // let input = r".\test\src_2.c";
+    // let output = r".\test\result.txt";
     let code = preprocess(read_to_string(input)?);
     let mut f = File::create(output)?;
     let ir = generate_ir(&code)?;
