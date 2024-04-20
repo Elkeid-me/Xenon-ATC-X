@@ -5,7 +5,7 @@ mod rvalue;
 mod statement;
 
 use super::{ast::*, ty::Type};
-use genawaiter::{stack::let_gen, yield_};
+use generator::{done, Gn};
 use std::{collections::LinkedList, fmt::Write, mem::take};
 
 struct Counter {
@@ -51,54 +51,52 @@ impl Generator {
     fn generate(mut self) -> String {
         let ir: LinkedList<_> =
             take(&mut self.translation_unit.ast).into_iter().map(|global_item| self.global_def(global_item)).collect();
-        let_gen!(ir, {
+        let ir = Gn::new_scoped(|mut s| {
             for iter in ir {
                 for str in iter.split('\n').filter(|s| !s.is_empty()) {
-                    yield_!(str.to_string());
+                    s.yield_(str.to_string());
                 }
             }
+            done!()
         });
-        let_gen!(postprocess, {
+        let postprocess = Gn::new_scoped(move |mut s| {
             let mut flag = true;
             for i in ir {
                 if flag && (i.starts_with("    jump") || i.starts_with("    ret") || i.starts_with("    br")) {
-                    yield_!(i);
+                    s.yield_(i);
                     flag = false;
-                } else if i.chars().next().unwrap() == '%' && i.chars().last().unwrap() == ':' || i == "}" {
-                    yield_!(i);
+                } else if i.starts_with('%') && i.ends_with(':') || i == "}" {
+                    s.yield_(i);
                     flag = true;
                 } else if flag {
-                    yield_!(i)
+                    s.yield_(i);
                 }
             }
+            done!()
         });
-        let_gen!(add_ret, {
+        let add_ret = Gn::new_scoped(|mut s| {
             let mut flag = false;
             let mut ret_int = false;
             for i in postprocess {
                 if i.ends_with("): i32 {") {
-                    yield_!(i);
                     flag = true;
                     ret_int = true;
                 } else if i.ends_with(") {") {
-                    yield_!(i);
                     flag = true;
                     ret_int = false;
                 } else if i.starts_with("    jump") || i.starts_with("    ret") || i.starts_with("    br") {
-                    yield_!(i);
                     flag = true;
-                } else if i.chars().next().unwrap() == '%' && i.chars().last().unwrap() == ':' || i == "}" {
+                } else if i.starts_with('%') && i.ends_with(':') || i == "}" {
                     if !flag && ret_int {
-                        yield_!("    ret 0".to_string())
+                        s.yield_("    ret 0".to_string());
                     } else if !flag && !ret_int {
-                        yield_!("    ret".to_string())
+                        s.yield_("    ret".to_string());
                     }
-                    yield_!(i);
                     flag = false;
-                } else {
-                    yield_!(i)
                 }
+                s.yield_(i);
             }
+            done!()
         });
         let global = self.global_const_init.join("");
         let ir: String = add_ret.into_iter().fold(String::new(), |mut output, s| {

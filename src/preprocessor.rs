@@ -1,7 +1,7 @@
-use genawaiter::{stack::let_gen, yield_};
+use generator::{done, Gn};
 
 pub fn preprocess(code: String) -> String {
-    let_gen!(remove_cr, {
+    let remove_cr = Gn::new_scoped(move |mut s| {
         enum RmCrState {
             Normal,
             Cr,
@@ -11,22 +11,23 @@ pub fn preprocess(code: String) -> String {
         for c in code.chars() {
             match (&state, c) {
                 (Normal, '\r') => state = Cr,
-                (Normal, _) => yield_!(c),
+                (Normal, _) => { s.yield_(c); }
                 (Cr, '\n') => {
                     state = Normal;
-                    yield_!('\n');
+                    s.yield_('\n');
                 }
-                (Cr, '\r') => yield_!('\n'),
+                (Cr, '\r') => { s.yield_('\n'); }
                 (Cr, _) => {
                     state = Normal;
-                    yield_!('\n');
-                    yield_!(c);
+                    s.yield_('\n');
+                    s.yield_(c);
                 }
             }
         }
-        if let Cr = state { yield_!('\r'); }
+        if let Cr = state { s.yield_('\r'); }
+        done!();
     });
-    let_gen!(phy_line_to_logical_line, {
+    let phy_line_to_logical_line = Gn::new_scoped(move |mut s| {
         enum P2LState {
             Normal,
             Backslash,
@@ -36,19 +37,20 @@ pub fn preprocess(code: String) -> String {
         for c in remove_cr {
             match (&state, c) {
                 (Normal, '\\') => state = Backslash,
-                (Normal, _) => yield_!(c),
+                (Normal, _) => { s.yield_(c); },
                 (Backslash, '\n') => state = Normal,
-                (Backslash, '\\') => yield_!('\\'),
+                (Backslash, '\\') => { s.yield_('\\'); },
                 (Backslash, _) => {
                     state = Normal;
-                    yield_!('\\');
-                    yield_!(c);
+                    s.yield_('\\');
+                    s.yield_(c);
                 }
             }
         }
-        if let Backslash = state { yield_!('\\'); }
+        if let Backslash = state { s.yield_('\\'); }
+        done!()
     });
-    let_gen!(remove_comments, {
+    let remove_comments = Gn::new_scoped(move |mut s| {
         enum State {
             Code,
             CodeWithSlash,
@@ -65,42 +67,43 @@ pub fn preprocess(code: String) -> String {
                 (Code, '/') => state = CodeWithSlash,
                 (Code, '"') => {
                     state = StringLiteral;
-                    yield_!('"');
+                    s.yield_('"');
                 }
-                (Code, _) => yield_!(c),
+                (Code, _) => { s.yield_(c); },
                 (CodeWithSlash, '/') => state = CxxComment,
                 (CodeWithSlash, '*') => state = Comment,
                 (CodeWithSlash, _) => {
                     state = Code;
-                    yield_!('/');
-                    yield_!(c);
+                    s.yield_('/');
+                    s.yield_(c);
                 }
                 (StringLiteral, '\\') => state = StringLiteralWithEscape,
                 (StringLiteral, '"') => {
                     state = Code;
-                    yield_!('"');
+                    s.yield_('"');
                 }
-                (StringLiteral, _) => yield_!(c),
+                (StringLiteral, _) => { s.yield_(c); },
                 (StringLiteralWithEscape, _) => {
                     state = StringLiteral;
-                    yield_!('\\');
-                    yield_!(c);
+                    s.yield_('\\');
+                    s.yield_(c);
                 }
                 (Comment, '*') => state = CommentWithStar,
                 (Comment, _) => (),
                 (CommentWithStar, '/') => {
                     state = Code;
-                    yield_!(' ');
+                    s.yield_(' ');
                 }
                 (CommentWithStar, '*') => (),
                 (CommentWithStar, _) => state = Comment,
                 (CxxComment, '\n') => {
                     state = Code;
-                    yield_!('\n');
+                    s.yield_('\n');
                 }
                 (CxxComment, _) => (),
             }
         }
+        done!()
     });
     remove_comments.into_iter().collect()
 }
