@@ -1,0 +1,444 @@
+% Copyright (C) 2024 Elkeid-me
+%
+% This file is part of Xenon ATC-X.
+%
+% Xenon ATC-X is free software: you can redistribute it and/or modify
+% it under the terms of the GNU General Public License as published by
+% the Free Software Foundation, either version 3 of the License, or
+% (at your option) any later version.
+%
+% Xenon ATC-X is distributed in the hope that it will be useful,
+% but WITHOUT ANY WARRANTY; without even the implied warranty of
+% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+% GNU General Public License for more details.
+%
+% You should have received a copy of the GNU General Public License
+% along with Xenon ATC-X.  If not, see <http://www.gnu.org/licenses/>.
+
+\section{概述}
+Xenon 是某大学编译原理课程的作业，其开发目标是把 SysY 编译为 RISC-V 汇编。SysY 是 C 语言的一个子集。
+
+Xenon 已被废弃，Xenon ATC-X（本项目）是其后继项目。ATC-X = \textbf{A}dvanced \textbf{T}echnology \textbf{C}omplier-\textbf{X}（先进技术编译器-X）。
+\subsection{基本功能}
+将\textbf{扩展的} SysY 编译到 Koopa IR，或 RISC-V（RV32IM）汇编。
+\subsection{主要特点}
+\begin{enumerate}
+    \item 在前端使用\textbf{解析表达文法}而不是\textbf{上下文无关文法}，不用处理悬垂 \inlinec{else} 问题。
+    \item 语言扩展，将在 \ref{lang-ext} 详细介绍。
+\end{enumerate}
+\section{编译器设计}
+\subsection{主要模块构成}
+编译器包含三个主要模块：
+\begin{enumerate}
+    \item 预处理器，负责换行符替换（见 \ref{stage-1}）、行拼接（见 \ref{stage-2}）和注释去除。
+    \item 前端，负责将不包含注释的 SysY 源代码翻译为 Koopa IR。前端又可以细分为解析器和 IR 生成器。
+    \item 后端，负责将 Koopa IR 翻译为 RISC-V 汇编（RV32IM）。
+\end{enumerate}
+\subsection{主要数据结构}
+\subsubsection{抽象语法树}
+
+语法树的根是 \inlinec{TranslationUnit}（翻译单元），\inlinec{TranslationUnit} 实质上是由 \inlinec{Definition}（符号定义）构成的列表。\inlinec{Definition} 是一个元组，包含符号的\textit{标识符}、\textit{初始化器}和符号的\textit{类型}。
+
+\textit{初始化器}是一个可区分联合，分为：
+\begin{itemize}
+    \item \inlinerust{Function(Vec<Option<String>>, Block)}（函数），其中 \inlinerust{Vec<Option<String>>} 记录了各个参数的标识符（可选），\inlinerust{Block} 存储了函数体；
+    \item \inlinerust{Expr(Expr)}（表达式）；
+    \item \inlinerust{Const(i32)}（常量）；
+    \item \inlinerust{List(InitList)}（初始化列表）；
+    \item \inlinerust{ConstList(ConstInitList)}（常量初始化列表）。
+\end{itemize}
+
+\textit{类型}也是一个可区分联合，分为
+\begin{itemize}
+    \item \inlinerust{Int}（整型）；
+    \item \inlinerust{Void}（空）；
+    \item \inlinerust{IntPointer(Vec<usize>)}（指针），\inlinerust{Vec<usize>} 存储了各个维度的长度；
+    \item \inlinerust{IntArray(Vec<usize>)}（数组），\inlinerust{Vec<usize>} 存储了各个维度的长度；
+    \item \inlinerust{Function(Box<Type>, Vec<Type>)}（函数），\inlinerust{Box<Type>} 存储返回值类型，而 \inlinerust{Vec<Type>} 存储各个参数的类型；
+\end{itemize}
+
+初始化器和类型\textbf{共同决定}了一个符号。例如：
+\begin{itemize}
+    \item \inlinec{int a;} 定义的符号 \inlinec{a}
+    \begin{itemize}
+        \item 初始化器为 \inlinerust{None}
+        \item 类型为 \inlinerust{Int}
+    \end{itemize}
+    \item \inlinec{int a = 1;} 定义的符号 \inlinec{a}
+    \begin{itemize}
+        \item 初始化器为 \inlinerust{Expr(1)}
+        \item 类型为 \inlinerust{Int}
+    \end{itemize}
+    \item \inlinec{const int a = 1;} 定义的符号 \inlinec{a}
+    \begin{itemize}
+        \item 初始化器为 \inlinerust{Const(1)}
+        \item 类型为 \inlinerust{Int}
+    \end{itemize}
+    \item \inlinec{int a[2][1] = {{1}, {2}};} 定义的符号 \inlinec{a}
+    \begin{itemize}
+        \item 初始化器为 \\\inlinerust{List(InitList([InitList([Expr(1)]), InitList([Expr(2)])]))}
+        \item 类型为 \inlinerust{IntArray([2][1])}
+    \end{itemize}
+    \item \inlinec{const int a[2][1] = {{1}, {2}};} 定义的符号 \inlinec{a}
+    \begin{itemize}
+        \item 初始化器为 \\
+        \inlinerust{ConstList(ConstInitList([ConstInitList([1]), ConstInitList([2])]))}
+        \item 类型为 \inlinerust{IntArray([2][1])}
+    \end{itemize}
+    \item 函数\textbf{声明} \inlinec{int f(int a[][2]);} 定义的符号 \inlinec{main}
+    \begin{itemize}
+        \item 初始化器为 \inlinerust{None}
+        \item 类型为 \inlinerust{Function(Int, [IntPointer([2])])}
+    \end{itemize}
+    定义的符号 \inlinec{a}
+    \begin{itemize}
+        \item 初始化器为 \inlinerust{None}
+        \item 类型为 \inlinerust{IntPointer([2])}
+    \end{itemize}
+    \item 函数\textbf{定义} \inlinec{int f(int a) { return 0; } } 定义的符号 \inlinec{main}
+    \begin{itemize}
+        \item 初始化器为 \inlinerust{Function(["a"], Block([Return(0)]))}
+        \item 类型为 \inlinerust{Function(Int, [Int])}
+    \end{itemize}
+\end{itemize}
+
+实际实现中，初始化器和类型并不存储在 \inlinerust{Definition} 的内部，而是存储在一个哈希表中；\inlinerust{Definition} 仅存储指向哈希表的 \inlinerust{Handler}。
+
+\inlinerust{Block}（复合语句）是语法树的基础。\inlinerust{Block} 是由一系列元素组成的列表，这些列表可以是：
+\begin{itemize}
+    \item \inlinerust{Definition}（局部变量定义）；
+    \item \inlinerust{Statement}（语句，即表达式（\inlinerust{Expr}）、\inlinec{if}、\inlinec{while}、\inlinec{continue} 和 \inlinec{break}）；
+    \item \inlinerust{Block}（复合语句），\inlinerust{Block} 套 \inlinerust{Block} 是很正常的。
+\end{itemize}
+
+\inlinerust{Expr}（表达式）是语法树的核心，仅摘录一部分：
+\begin{minted}[linenos,frame=single]{rust}
+pub enum Expr {
+    Mul(Box<Expr>, Box<Expr>),
+    Div(Box<Expr>, Box<Expr>),
+    // ......
+    Num(i32),
+    Var(String),
+    Func(String, Vec<Expr>),
+    Array(String, Vec<Expr>, bool),
+}
+\end{minted}
+\subsubsection{内存形式的汇编}
+为了方便后端的优化和后处理，汇编以内存形式生成。部分代码摘录如下：
+\begin{minted}[linenos,frame=single]{rust}
+pub type RiscV = Vec<RiscVItem>;
+pub enum RiscVItem {
+    Label(String),
+    Inst(Inst),
+    Directive(Directive),
+}
+pub enum Inst {
+    Blt(Reg, Reg, String),
+    Bgt(Reg, Reg, String),
+    // ......
+    Slt(Reg, Reg, Reg),
+    Snez(Reg, Reg),
+}
+\end{minted}
+\subsection{主要设计考虑及算法选择}
+\subsubsection{符号表}
+见 \ref{semantic-checking}。
+\subsubsection{寄存器分配}\label{reg-alloc}
+\begin{itemize}
+    \item 简单起见，全部变量都在栈上；
+    \item 二元表达式计算时，变量被加载到 \texttt{t0}、\texttt{t1} 寄存器中，结果存储在 \texttt{t2} 寄存器，并且立即写入内存；
+    \item 引用栈上变量，且偏移量大于 2048 字节时，偏移量被 \texttt{li} 到 \texttt{t3} 寄存器中，然后以 \texttt{sp} 或 \texttt{fp}（\texttt{s0}） 加之；
+    \item 间接跳转时，跳转地址被 \texttt{la} 到 \texttt{t4}，然后 \texttt{jr t4}；
+    \item 引用全局变量时，地址被 \texttt{la} 到 \texttt{t0}；
+    \item 函数调用时前 8 个函数参数加载到 \texttt{a0} \~{} \texttt{a7} 寄存器，被调用的函数立即将参数写入内存。
+\end{itemize}
+\subsubsection{优化}
+在前端，对表达式进行代数化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}；当 \inlinec{if} 或 \inlinec{while} 的条件表达式可以确定时（如 \inlinec{while (x - x)}），则生成的 IR 直接使用 \texttt{jump} 指令。
+
+生成汇编时，对于栈上数据的引用，当栈大小小于 2048 字节时，使用 \texttt{sp} 寄存器访问；栈大小在 2048 \~{} 4096 字节时，高地址的数据使用 \texttt{fp}（\texttt{s0}）寄存器访问。
+
+在生成汇编后进行窥孔优化。具体包含：
+\begin{itemize}
+    \item 控制流化简，
+\begin{minted}[linenos,frame=single]{asm}
+    bne rs_1, rs_2, label_1
+    j label_2
+label_1:
+\end{minted}
+    优化为
+    \begin{minted}[linenos,frame=single]{asm}
+    beq rs_1, rs_2, label_2
+label_1:
+    \end{minted}
+    \texttt{blt}、\texttt{bgt} 等指令的优化类似。而单独的：
+    \begin{minted}[linenos,frame=single]{asm}
+    j label_1
+label_1:
+    \end{minted}
+        优化为
+    \begin{minted}[linenos,frame=single]{asm}
+label_1:
+    \end{minted}
+    \item 去除多余的 \texttt{lw}。
+\begin{minted}[linenos,frame=single]{asm}
+sw rs_1, offset(rs_2)
+lw rd, offset(rs_2)
+\end{minted}
+    优化为
+    \begin{minted}[linenos,frame=single]{asm}
+sw rs_1, offset(rs_2)
+mv rd, rs_1
+    \end{minted}
+    而
+    \begin{minted}[linenos,frame=single]{asm}
+sw rs_1, offset(rs_2)
+lw rs_1, offset(rs_2)
+\end{minted}
+    直接优化为
+    \begin{minted}[linenos,frame=single]{asm}
+sw rs_1, offset(rs_2)
+    \end{minted}
+\end{itemize}
+\section{编译器实现}
+\subsection{预处理器}
+预处理器负责的三个阶段全部采用有限状态自动机实现，并组织为生成器的形式。
+\subsubsection{换行符替换}\label{stage-1}
+不同平台上的换行符各不相同，Windows 默认为 \texttt{\textbackslash r\textbackslash n}，mac 默认为 Windows 默认为 \texttt{\textbackslash r}，而 Linux 默认为 \texttt{\textbackslash n}。为了保证编译器在这些情况下有一致的行为，第一阶段进行换行符替换。具体而言，是将 \texttt{\textbackslash r\textbackslash n} 或单独的 \texttt{\textbackslash r} 替换为 \texttt{\textbackslash n}。例如：
+\begin{itemize}
+    \item \texttt{\textbackslash r\textbackslash n} 应当替换为 \texttt{\textbackslash n}
+    \item \texttt{\textbackslash r\textbackslash r\textbackslash n\textbackslash r} 应当替换为 \texttt{\textbackslash n\textbackslash n\textbackslash n}
+    \item \texttt{\textbackslash r\textbackslash r\textbackslash r\textbackslash r} 应当替换为 \texttt{\textbackslash n\textbackslash n\textbackslash n\textbackslash n}
+\end{itemize}
+\subsubsection{行拼接}\label{stage-2}
+根据 C 语言标准，凡在反斜杠出现于行尾（紧跟换行符）时，删除反斜杠和换行符，把两个物理源码行组合成一个逻辑源码行。\textbf{这属于我对 SysY 的扩展，而不是标准 SysY。}例如：
+\begin{minted}[linenos,frame=single]{c}
+int main() {
+    int a = 1; // \
+    int b;
+    int b;     // \\\\
+    int b;
+    return a;
+}
+\end{minted}
+被处理为：
+\begin{minted}[linenos,frame=single]{c}
+int main() {
+    int a = 1; //     int b;
+    int b;     // \\\    int b;
+    return a;
+}
+\end{minted}
+\subsubsection{去除注释}
+预处理器按照 C 语言标准去除注释。
+\subsection{解析器}
+\subsubsection{第一次解析}
+第一次解析中，使用 pest 将代码处理为语法树。因为 pest 设计上的局限性，此处语法树使用的是 pest 中 \inlinerust{Pairs<Rule>} 的形式。此外，这里还没有对运算符优先级做处理，表达式仍然表现为 \inlinerust{Pair} 流的形式。
+\subsubsection{第二次解析}
+遍历上述 \inlinerust{Pairs<Rule>} 的语法树，转换为 \inlinerust{TranslationUnit}。同时，在这一步使用 pest 提供的 \inlinerust{PrattParser<Rule>} 处理运算符优先级。
+\subsubsection{语义检查}\label{semantic-checking}
+遍历 \inlinerust{TranslationUnit}，进行语义检查和常量表达式计算。
+
+为支持作用域嵌套，ATC-X 的符号表设计为一个栈（\inlinerust{Vec<HashMap<String, Definition>>}），在查找符号时，优先查找作用域最靠内的符号。
+
+因为 IR 中要求每个标识符是局部或全局唯一的，解析器在进行语义检查时，会同时进行名字重整，即为标识符加前缀 \texttt{\_I}（整型）、\texttt{\_P}（指针）或 \texttt{\_A}（数组）。
+\begin{quotation}
+    \textit{这个设计是不得已而为之。在设计的最初阶段，语法树里是没有符号表的。等到后面已经积重难返了。}
+\end{quotation}
+
+代码：
+\begin{minted}[linenos,frame=single]{c}
+int f(int a[]) {
+    const int x[1] = {1};
+    int y = 1, z[1] = {1};
+    { int x = x[0], y = x; }
+}
+int g(int a[]) {
+    const int x[1] = {1};
+    int y = 1, z[1] = {1};
+    { int x = x[0], y = x; }
+}
+\end{minted}
+被重整化为：
+\begin{minted}[linenos,frame=single]{c}
+int f(int _Pa[]) {
+    const int _Ax[1] = {1};
+    int _Iy = 1, _Az[1] = {1};
+    { int _Ix = _Ax[0], _I_Iy = _Ix; }
+}
+int g(int _Pa[]) {
+    const int _A_Ax[1] = {1};
+    int _Iy = 1, _Az[1] = {1};
+    { int _Ix = _A_Ax[0], _I_Iy = _Ix; }
+}
+\end{minted}
+
+考虑到 C 标准中将“下划线+大写字母”开头的标识符视为保留名，这样做是完全合理的。此外，可以看到两个函数中的局部常量数组做了特殊处理，因为生成 IR 时局部常量数组会被移动到全局。
+
+实际实现中，第二次解析和语义检查是合并在一起的。除此之外，还会进行表达式化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}。
+\subsection{IR 生成器}
+\subsubsection{生成粗 IR}
+前端直接生成文本形式的、非 SSA 的 Koopa IR。具体过程类似课程中的使用 SDT 生成中间表示。
+
+在生成表达式的 IR 时，SysY 中的表达式被进一步分为三类：
+\begin{enumerate}
+    \item 左值表达式（lvalue），这种表达式计算的值是一个内存地址。例如，语句 \inlinec{x = 1;} 中的表达式 \inlinec{x} 是左值表达式；鉴于 ATC-X 对 SysY 做了语法扩展，\inlinec{(x = y) = z;} 中的\inlinec{x} 和 \inlinec{x = y} 都是左值表达式。
+    \item 右值表达式（rvalue），这种表达式计算的值只是一个值。例如，\inlinec{x = (y += z);} 中的 \inlinec{z} 和 \inlinec{y += z} 都是右值表达式。
+    \item 弃值表达式（dvalue），这种表达式计算的值会被舍弃。例如，语句 \inlinec{x = 1;} 中的 \inlinec{x = 1} 是弃值表达式，这个语句只会执行赋值的副作用而不产生值。
+\end{enumerate}
+\subsubsection{IR 后处理}
+上述生成的 IR 称为粗 IR，因为它有很多不符合 Koopa IR 规范的情况。例如，代码：
+\begin{minted}[linenos,frame=single]{c}
+void f() { }
+int main() {
+    {
+        while(1)
+            continue;
+        return 0;
+    }
+    return 0;
+}
+\end{minted}
+会生成 IR：
+\begin{minted}[linenos,frame=single]{text}
+fun @f() {
+%1:
+}
+fun @main(): i32 {
+%3:
+    jump %6
+%6:
+    jump %6
+    jump %6
+%7:
+    ret 0
+    ret 0
+}
+\end{minted}
+可以看到，某些基本块存在连续的 \texttt{jump}，某些基本块是空的。后处理就是要处理这些不合法的 IR，
+分为两步：
+\begin{enumerate}
+    \item 在基本块的内部，第一个 \texttt{jump}、\texttt{br} 或 \texttt{ret} 后的所有指令被忽略；
+    \item 如果某个基本块的结尾不是 \texttt{jump}、\texttt{br} 或 \texttt{ret}，则根据函数返回值类型添加 \texttt{ret 0} 或 \texttt{ret}。
+\end{enumerate}
+上述 IR 后处理的结果为：
+\begin{minted}[linenos,frame=single]{text}
+fun @f() {
+%1:
+    ret
+}
+fun @main(): i32 {
+%3:
+    jump %6
+%6:
+    jump %6
+%7:
+    ret 0
+}
+\end{minted}
+\subsection{后端}
+后端使用 Koopa IR 库提供的 \inlinerust{koopa::front::Driver} 将文本形式的 IR 重建为内存形式；然后遍历内存形式的 IR，生成汇编。
+\subsubsection{汇编生成}
+寄存器分配的策略已在 \ref{reg-alloc} 阐述。
+
+栈帧包含以下四部分：
+\begin{enumerate}
+    \item 为变量分配的空间；
+    \item （如果这个函数不是叶函数），调用其他函数，且参数个数大于 8 时栈传参的空间；
+    \item （如果这个函数不是叶函数），保存 \texttt{ra} 的空间；
+    \item （如果这个函数不是叶函数，且栈帧大小大于 2048），保存 \texttt{fp}（\texttt{s0}） 的空间；
+\end{enumerate}
+\subsubsection{后处理与优化}
+上述生成的汇编称为粗汇编，因为所有的分支指令都采用直接跳转；但分支指令的偏移量至多为 4096 字节，\texttt{j} 指令的偏移量至多为 1048576 字节，长距离跳转时很容易超出这一偏移量。后处理就是要将这些超出范围的直接跳转改为间接跳转。
+
+作为一个例子，不妨假设下列 \texttt{ble} 中的 \texttt{label} 超出直接跳转的 4096 字节范围：
+\begin{minted}[linenos,frame=single]{asm}
+ble rs_1, rs_2, label
+\end{minted}
+如果 \texttt{label} 还在 1048576 字节范围内，则改为：
+\begin{minted}[linenos,frame=single]{asm}
+bgt rs_1, rs_2, label_2
+j label
+label_2:
+\end{minted}
+如果 \texttt{label} 已经超出 1048576 字节范围，则改为：
+\begin{minted}[linenos,frame=single]{asm}
+bgt rs_1, rs_2, label_2
+la t4, label
+jr t4
+label_2:
+\end{minted}
+\subsection{工具库介绍}
+\subsubsection[pest]{pest\footnote{\url{https://github.com/pest-parser/pest}}}
+使用解析表达文法（PEG）的 parser。相比编译原理实践文档中推荐的 lalrpop\footnote{\url{https://github.com/lalrpop/lalrpop}} 或 flex/bison，pest 的编写和调试都更加简单。
+\subsubsection[koopa]{koopa\footnote{\url{https://github.com/pku-minic/koopa}}}
+编译原理课程使用的 IR。本项目中只使用 Koopa IR 的非 SSA 版本。
+\subsubsection[generator]{generator\footnote{\url{https://github.com/Xudong-Huang/generator-rs}}}
+Rust 的第三方生成器/协程库。Rust 语言的 coroutine 还在 unstable 阶段，只好用第三方库代替了。
+\section{语言扩展汇总}\label{lang-ext}
+除标准 SysY 语言外，ATC-X 扩展了如下功能：
+\begin{enumerate}
+    \item 二进制整数字面量，如：
+    \begin{minted}[linenos,frame=single]{c}
+int a = 0b11011111101010010; // a = 114514
+    \end{minted}
+    \item 自定义中缀运算符，例如：
+    \begin{minted}[linenos,frame=single]{c}
+int foo(int x) { /* do something */ }
+int foo2(int x) { /* do something */ }
+int bar(int x, int y) { /* do something */ }
+int main() {
+    int x = 2, y = 2;
+    x ~bar~ y;            // 等价于 bar(x, y);
+}
+    \end{minted}
+    \item 管道运算符与成员访问运算符，例如：
+    \begin{minted}[linenos,frame=single]{c}
+int foo(int x) { /* do something */ }
+int foo2(int x) { /* do something */ }
+int bar(int x, int y) { /* do something */ }
+int main() {
+    int x = 2, y = 2;
+    x |> foo |> foo2;     // 等价于 foo2(foo(x));
+    x |> foo() |> bar(y); // 等价于 bar(y, foo(x));
+    bar(x) <| y;          // 等价于 bar(x, y);
+    ((x.bar(y)) ~bar~ 114)
+      |> foo;             // 等价于 foo(bar(bar(x, y), 114));
+}
+    \end{minted}
+    \item 函数声明语法，允许在函数签名中不指明参数名称，对于没有参数的函数也允许使用 \inlinec{void} 为参数列表。例如：
+    \begin{minted}[linenos,frame=single]{c}
+int foo(int);
+int bar(int, int);
+int main(void) { return foo(bar(114, 514)); }
+int bar(int x, int) { return x + 1919; }
+    \end{minted}
+    \item 各种位运算符，如 \inlinec{<<}、\inlinec{^} 和 \inlinec{~}。
+    \item 赋值被视为又结合的中缀运算符而不是语句，且赋值运算符返回左值。
+    \item 各种复合赋值运算符，如 \inlinec{+=}，\inlinec{*=}。
+    \item 自增自减运算符，其中前缀自增自减返回左值。例如 \inlinec{++x = 1;}
+    \item 以常量下标取得的常量数组元素可以参与编译期常量表达式求值，如：
+    \begin{minted}[linenos,frame=single]{c}
+int main() {
+    const int a[1] = {10};
+    const int x = a[0]; // x == 10
+    int y[a[0]];        // y 的类型是 int[10]
+    return 0;
+}
+    \end{minted}
+\end{enumerate}
+\section{计划中但未实现的功能}
+\begin{enumerate}
+    \item 编译期函数；
+    \item 允许非常量表达式初始化全局变量；
+    \item 寄存器分配。
+\end{enumerate}
+\section{实习总结}
+\subsection{收获和体会}
+使用 Rust 实现编译 Lab 极大地提升了我的 Rust 水平（虽然还是天天骂 Rust 编译器）；此外，使用 PEG 而非 CFG，也扩展了我的知识面。
+\subsection{对编译 Lab 的建议}
+\begin{enumerate}
+    \item 修复 Koopa IR 中基本块的名称不能为 “\texttt{\%} + 数字”的 bug；
+    \item 编译 Lab 支持用更多语言编写，如 Scala、F\# 等函数式语言。（真的不想再碰 Rust 了……）
+\end{enumerate}
+\section{其他}
+本文的标题致敬 Wolfram Mathematica 参考文档《关于内部实现的一些注释》。
