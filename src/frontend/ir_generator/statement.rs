@@ -1,5 +1,5 @@
-use super::super::ast::{Expr::*, *};
 use super::Generator;
+use crate::frontend::ast::{Expr::*, *};
 
 impl Generator {
     fn while_statement_cond_neq_0(&mut self, cond: Expr, block: Block) -> String {

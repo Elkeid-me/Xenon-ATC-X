@@ -92,9 +92,7 @@ impl InitListTrait for ConstInitListItem {
         init_list
             .into_iter()
             .map(|item| match item {
-                ConstInitListItem::ConstInitList(list) => {
-                    ConstInitListItem::ConstInitList(Box::new(Self::add_empty_list(&len[1..], *list)))
-                }
+                Self::ConstInitList(list) => Self::ConstInitList(Box::new(Self::add_empty_list(&len[1..], *list))),
                 i => i,
             })
             .chain(repeat(empty_list).take(empty_list_n))
@@ -127,14 +125,14 @@ impl InitListTrait for InitListItem {
         init_list
             .into_iter()
             .map(|item| match item {
-                InitListItem::InitList(list) => InitListItem::InitList(Box::new(Self::add_empty_list(&len[1..], *list))),
+                Self::InitList(list) => Self::InitList(Box::new(Self::add_empty_list(&len[1..], *list))),
                 expr => expr,
             })
             .chain(repeat(empty_list).take(empty_list_n))
             .collect()
     }
 }
-
+type Signature = (String, Type, Vec<Type>, Vec<Option<String>>);
 impl ASTBuilder {
     fn new() -> Self {
         let expr_parser = PrattParser::new()
@@ -216,7 +214,7 @@ impl ASTBuilder {
                 match self.table.last_mut().unwrap().insert(original_id.to_string(), (handler, mangled_id.clone())) {
                     Some(_) => Err(format!("标识符 {original_id} 在当前作用域中已存在")),
                     None => {
-                        if matches!(init, Some(Init::ConstInitList(_))) {
+                        if matches!(init, Some(Init::ConstList(_))) {
                             self.global_name_table.insert(mangled_id.clone());
                         } else {
                             match &mut self.local_name_table {
@@ -387,7 +385,7 @@ impl ASTBuilder {
                 let id = iter.next().unwrap().as_str().to_string();
                 let len = self.iter_to_vec(iter.next())?;
                 let init_list = self.parse_init_list(iter.next().unwrap(), &len)?;
-                self.insert_definition(id, IntArray(len), Some(Init::ConstInitList(init_list)))
+                self.insert_definition(id, IntArray(len), Some(Init::ConstList(init_list)))
             }
             Rule::array_definition => {
                 let mut iter = pair.into_inner();
@@ -396,7 +394,7 @@ impl ASTBuilder {
                 match iter.next() {
                     Some(i) => {
                         let init_list = self.parse_init_list(i, &len)?;
-                        self.insert_definition(id, IntArray(len), Some(Init::InitList(init_list)))
+                        self.insert_definition(id, IntArray(len), Some(Init::List(init_list)))
                     }
                     None => self.insert_definition(id, IntArray(len), None),
                 }
@@ -495,7 +493,7 @@ impl ASTBuilder {
         block
     }
 
-    fn parse_signature(&self, pair: Pair<Rule>) -> Result<(String, Type, Vec<Type>, Vec<Option<String>>), String> {
+    fn parse_signature(&self, pair: Pair<Rule>) -> Result<Signature, String> {
         let mut iter = pair.into_inner();
         let return_type = match iter.next().unwrap().as_rule() {
             Rule::void_keyword => Void,

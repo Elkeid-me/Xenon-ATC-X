@@ -1,6 +1,7 @@
+#![allow(warnings)]
 use std::fmt::{Display, Formatter, Result};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Inst {
     Beqz(Reg, String),
     Bnez(Reg, String),
@@ -34,7 +35,7 @@ pub enum Inst {
     Mv(Reg, Reg),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Reg {
     Zero,
     Ra,
@@ -70,7 +71,7 @@ pub enum Reg {
     T6,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Directive {
     Text,
     Global(String),
@@ -79,7 +80,7 @@ pub enum Directive {
     Word(Vec<i32>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum RiscVItem {
     Label(String),
     Inst(Inst),
@@ -147,7 +148,7 @@ impl RiscVTrait for RiscV {
 }
 
 impl Display for Inst {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Self::Beqz(rs, label) => write!(f, "beqz {rs}, {label}"),
             Self::Bnez(rs, label) => write!(f, "bnez {rs}, {label}"),
@@ -189,13 +190,13 @@ impl Display for Inst {
 }
 
 impl Display for Directive {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            Directive::Text => write!(f, ".text"),
-            Directive::Global(label) => write!(f, ".global {label}"),
-            Directive::Data => write!(f, ".data"),
-            Directive::Zero(len) => write!(f, ".zero {len}"),
-            Directive::Word(nums) => {
+            Self::Text => write!(f, ".text"),
+            Self::Global(label) => write!(f, ".global {label}"),
+            Self::Data => write!(f, ".data"),
+            Self::Zero(len) => write!(f, ".zero {len}"),
+            Self::Word(nums) => {
                 let data: Vec<_> = nums.iter().map(i32::to_string).collect();
                 write!(f, ".word {}", data.as_slice().join(", "))
             }
@@ -204,11 +205,11 @@ impl Display for Directive {
 }
 
 impl Display for RiscVItem {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            RiscVItem::Label(label) => writeln!(f, "{label}:"),
-            RiscVItem::Inst(inst) => writeln!(f, "    {inst}"),
-            RiscVItem::Directive(directive) => writeln!(f, "{directive}"),
+            Self::Label(label) => writeln!(f, "{label}:"),
+            Self::Inst(inst) => writeln!(f, "    {inst}"),
+            Self::Directive(directive) => writeln!(f, "{directive}"),
         }
     }
 }

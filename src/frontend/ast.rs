@@ -15,14 +15,13 @@ pub type Definition = (Handler, String);
 /// - [`Init::Function`] 是二元组，前者为每个形参的重整化后名字，后者为函数体.
 /// - [`Init::Expr`]，表示这个变量使用一个表达式初始化，即这是一个整型变量.
 /// - [`Init::Const`]，表示这个变量使用一个整型常量初始化，即这是一个整型常量.
-/// - [`Init::ConstInitList`] 和 [`Init::InitList`] 同理.
-#[derive(Debug)]
+/// - [`Init::ConstList`] 和 [`Init::List`] 同理.
 pub enum Init {
     Function(Vec<Option<String>>, Block),
     Expr(Expr),
     Const(i32),
-    InitList(InitList),
-    ConstInitList(ConstInitList),
+    List(InitList),
+    ConstList(ConstInitList),
 }
 
 impl Default for Init {
@@ -31,7 +30,7 @@ impl Default for Init {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum InitListItem {
     InitList(Box<InitList>),
     Expr(Expr),
@@ -39,7 +38,7 @@ pub enum InitListItem {
 
 pub type InitList = Vec<InitListItem>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ConstInitListItem {
     ConstInitList(Box<ConstInitList>),
     Num(i32),
@@ -47,7 +46,6 @@ pub enum ConstInitListItem {
 
 pub type ConstInitList = Vec<ConstInitListItem>;
 
-#[derive(Debug)]
 pub enum Statement {
     Expr(Expr),
     If(Expr, Box<Block>, Box<Block>),
@@ -59,7 +57,6 @@ pub enum Statement {
 
 pub type Block = Vec<BlockItem>;
 
-#[derive(Debug)]
 pub enum BlockItem {
     Def(Definition),
     Block(Block),
@@ -117,13 +114,13 @@ pub enum Expr {
     Array(String, Vec<Expr>, bool),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum ExprCategory {
     LValue,
     RValue,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum ExprConst {
     ConstEval,
     NonConst,
@@ -132,7 +129,7 @@ pub enum ExprConst {
 impl Expr {
     pub fn get_num(&self) -> i32 {
         match self {
-            Expr::Num(i) => *i,
+            Self::Num(i) => *i,
             _ => unreachable!(),
         }
     }
@@ -143,10 +140,10 @@ impl std::ops::BitAnd for ExprConst {
 
     fn bitand(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (ExprConst::ConstEval, ExprConst::ConstEval) => ExprConst::ConstEval,
-            (ExprConst::ConstEval, ExprConst::NonConst)
-            | (ExprConst::NonConst, ExprConst::ConstEval)
-            | (ExprConst::NonConst, ExprConst::NonConst) => ExprConst::NonConst,
+            (Self::ConstEval, Self::ConstEval) => Self::ConstEval,
+            (Self::ConstEval, Self::NonConst) | (Self::NonConst, Self::ConstEval) | (Self::NonConst, Self::NonConst) => {
+                Self::NonConst
+            }
         }
     }
 }

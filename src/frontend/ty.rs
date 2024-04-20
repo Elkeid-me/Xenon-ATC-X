@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy)]
+use std::fmt::{Display, Formatter, Result};
+
+#[derive(Clone, Copy)]
 pub enum RefType<'a> {
     Int,
     Void,
@@ -6,28 +8,47 @@ pub enum RefType<'a> {
     IntArray(&'a [usize]),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, PartialEq)]
 pub enum Type {
     Int,
+    #[default]
     Void,
     IntPointer(Vec<usize>),
     IntArray(Vec<usize>),
     Function(Box<Type>, Vec<Type>),
 }
 
-impl Default for Type {
-    fn default() -> Self {
-        Self::Void
-    }
-}
-
-impl PartialEq for Type {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::IntPointer(l0), Self::IntPointer(r0)) => l0 == r0,
-            (Self::IntArray(l0), Self::IntArray(r0)) => l0 == r0,
-            (Self::Function(l0, l1), Self::Function(r0, r1)) => l0 == r0 && l1 == r1,
-            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            Self::Int => write!(f, "int"),
+            Self::Void => write!(f, "void"),
+            Self::IntPointer(len) => {
+                write!(f, "*int")?;
+                for i in len {
+                    write!(f, "[{i}]")?;
+                }
+                Ok(())
+            }
+            Self::IntArray(len) => {
+                write!(f, "int")?;
+                for i in len {
+                    write!(f, "[{i}]")?;
+                }
+                Ok(())
+            }
+            Self::Function(ret_type, para_types) => {
+                write!(f, "{ret_type}(")?;
+                let mut flag = false;
+                for i in para_types {
+                    if flag {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{i}")?;
+                    flag = true;
+                }
+                write!(f, ")")
+            }
         }
     }
 }

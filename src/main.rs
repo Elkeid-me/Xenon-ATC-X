@@ -1,4 +1,3 @@
-#![allow(warnings)]
 mod arg_parse;
 mod backend;
 mod frontend;
@@ -24,9 +23,6 @@ macro_rules! risk {
 
 fn compile() -> Result<(), Box<dyn std::error::Error>> {
     let (mode, input, output) = parse(std::env::args())?;
-    // let mode = Mode::RiscV;
-    // let input = r".\test\src_2.c";
-    // let output = r".\test\result.txt";
     let code = preprocess(read_to_string(input)?);
     let mut f = File::create(output)?;
     let ir = generate_ir(&code)?;
@@ -45,6 +41,6 @@ fn compile() -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     if let Err(s) = compile() {
         println!("{s}");
-        std::process::exit(0);
+        std::process::exit(1);
     }
 }

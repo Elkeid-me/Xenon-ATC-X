@@ -60,13 +60,7 @@ fn generate_context(func_data: &FunctionData) -> Context {
     Context { vars, labels, frame_size, save_ra }
 }
 
-fn load_value(
-    global_vars: &HashMap<Value, String>,
-    context: &Context,
-    func_data: &FunctionData,
-    value: Value,
-    reg: &mut Reg,
-) -> RiscV {
+fn load_value(context: &Context, func_data: &FunctionData, value: Value, reg: &mut Reg) -> RiscV {
     match func_data.dfg().value(value).kind() {
         Integer(i) if i.value() == 0 => {
             *reg = Reg::Zero;
@@ -107,7 +101,7 @@ fn load_value(
     }
 }
 
-fn store_value(global_vars: &HashMap<Value, String>, context: &Context, func_data: &FunctionData, value: Value, reg: Reg) -> RiscV {
+fn store_value(context: &Context, value: Value, reg: Reg) -> RiscV {
     let offset = *context.vars.get(&value).unwrap();
     if offset <= 2047 {
         vec![RiscVItem::Inst(Inst::Sw(reg, offset, Reg::Sp))]
@@ -121,7 +115,6 @@ fn store_value(global_vars: &HashMap<Value, String>, context: &Context, func_dat
 }
 
 fn get_ptr(
-    ir: &Program,
     global_vars: &HashMap<Value, String>,
     context: &Context,
     func_data: &FunctionData,
@@ -147,10 +140,10 @@ fn get_ptr(
                     insts.add_inst(Inst::Add(base_reg, Reg::Sp, base_reg));
                 }
             }
-            _ => insts.extend(load_value(global_vars, context, func_data, base, &mut base_reg)),
+            _ => insts.extend(load_value(context, func_data, base, &mut base_reg)),
         }
     }
-    insts.extend(load_value(global_vars, context, func_data, index, &mut index_reg));
+    insts.extend(load_value(context, func_data, index, &mut index_reg));
     insts.add_inst(Inst::Li(step_reg, step));
     insts.add_inst(Inst::Mul(index_reg, index_reg, step_reg));
     insts.add_inst(Inst::Add(base_reg, base_reg, index_reg));
@@ -213,7 +206,7 @@ fn gen_value(
             let src = store.value();
             let dst = store.dest();
             let mut src_reg = Reg::T0;
-            insts.extend(load_value(global_vars, context, func_data, src, &mut src_reg));
+            insts.extend(load_value(context, func_data, src, &mut src_reg));
             if global_vars.contains_key(&dst) {
                 let addr = global_vars.get(&dst).unwrap();
                 insts.add_inst(Inst::La(Reg::T1, addr.clone()));
@@ -249,25 +242,25 @@ fn gen_value(
             let base = ptr.src();
             let index = ptr.index();
             let step: usize = risk!(value_type.kind(), TypeKind::Pointer(base) => base.size());
-            let (inst, base_reg) = get_ptr(ir, global_vars, context, func_data, base, index, step as i32);
+            let (inst, base_reg) = get_ptr(global_vars, context, func_data, base, index, step as i32);
             insts.extend(inst);
-            insts.extend(store_value(global_vars, context, func_data, value, base_reg));
+            insts.extend(store_value(context, value, base_reg));
         }
         GetElemPtr(ptr) => {
             let base = ptr.src();
             let index = ptr.index();
             let step = risk!(value_type.kind(), TypeKind::Pointer(base) => base.size());
-            let (inst, base_reg) = get_ptr(ir, global_vars, context, func_data, base, index, step as i32);
+            let (inst, base_reg) = get_ptr(global_vars, context, func_data, base, index, step as i32);
             insts.extend(inst);
-            insts.extend(store_value(global_vars, context, func_data, value, base_reg));
+            insts.extend(store_value(context, value, base_reg));
         }
         Binary(binary) => {
             let lhs = binary.lhs();
             let mut rs1 = Reg::T0;
-            insts.extend(load_value(global_vars, context, func_data, lhs, &mut rs1));
+            insts.extend(load_value(context, func_data, lhs, &mut rs1));
             let rhs = binary.rhs();
             let mut rs2 = Reg::T1;
-            insts.extend(load_value(global_vars, context, func_data, rhs, &mut rs2));
+            insts.extend(load_value(context, func_data, rhs, &mut rs2));
             let rd = Reg::T2;
             match binary.op() {
                 BinaryOp::NotEq => {
@@ -300,12 +293,12 @@ fn gen_value(
                 BinaryOp::Shr => insts.add_inst(Inst::Srl(rd, rs1, rs2)),
                 BinaryOp::Sar => insts.add_inst(Inst::Sra(rd, rs1, rs2)),
             }
-            insts.extend(store_value(global_vars, context, func_data, value, rd));
+            insts.extend(store_value(context, value, rd));
         }
         Branch(branch) => {
             let cond = branch.cond();
             let mut rs = Reg::T0;
-            insts.extend(load_value(global_vars, context, func_data, cond, &mut rs));
+            insts.extend(load_value(context, func_data, cond, &mut rs));
             let true_label = context.labels.get(&branch.true_bb()).unwrap().clone();
             let false_label = context.labels.get(&branch.false_bb()).unwrap().clone();
             insts.add_inst(Inst::Bnez(rs, true_label));
@@ -319,7 +312,7 @@ fn gen_value(
             let args = func.args();
             for (&value, &reg) in args.iter().zip(CALL_REGS.iter()) {
                 let mut reg_ = reg;
-                insts.extend(load_value(global_vars, context, func_data, value, &mut reg_));
+                insts.extend(load_value(context, func_data, value, &mut reg_));
                 if reg_ != reg {
                     insts.add_inst(Inst::Mv(reg, reg_))
                 }
@@ -327,19 +320,19 @@ fn gen_value(
             if args.len() > 8 {
                 for (i, &arg) in args[8..].iter().enumerate() {
                     let mut reg = Reg::T0;
-                    insts.extend(load_value(global_vars, context, func_data, arg, &mut reg));
+                    insts.extend(load_value(context, func_data, arg, &mut reg));
                     insts.add_inst(Inst::Sw(reg, i as i32 * 4, Reg::Sp));
                 }
             }
             insts.add_inst(Inst::Call(ir.func(func.callee()).name()[1..].to_string()));
             if value_type.is_i32() {
-                insts.extend(store_value(global_vars, context, func_data, value, Reg::A0));
+                insts.extend(store_value(context, value, Reg::A0));
             }
         }
         Return(ret) => {
             if let Some(value) = ret.value() {
                 let mut rd = Reg::A0;
-                insts.extend(load_value(global_vars, context, func_data, value, &mut rd));
+                insts.extend(load_value(context, func_data, value, &mut rd));
                 if rd != Reg::A0 {
                     insts.add_inst(Inst::Mv(Reg::A0, rd))
                 }

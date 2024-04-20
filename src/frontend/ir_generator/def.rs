@@ -1,5 +1,5 @@
-use super::super::{ast::*, ty::Type};
 use super::Generator;
+use crate::frontend::{ast::*, ty::Type};
 use crate::risk;
 use std::fmt::Write;
 
@@ -62,13 +62,13 @@ impl Generator {
                 let (expr_eval, expr_id) = self.expr_rvalue(expr);
                 format!("{expr_eval}    %{id} = alloc i32\n    store {expr_id}, %{id}\n")
             }
-            (Type::IntArray(len), id, Some(Init::ConstInitList(list))) => {
+            (Type::IntArray(len), id, Some(Init::ConstList(list))) => {
                 let init_str = Self::const_init_list_to_str(&len, list);
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
                 self.global_const_init.push(format!("global %{id} = alloc {ty_str}, {init_str}\n"));
                 String::new()
             }
-            (Type::IntArray(len), id, Some(Init::InitList(list))) => self.local_array(Type::IntArray(len), id, list),
+            (Type::IntArray(len), id, Some(Init::List(list))) => self.local_array(Type::IntArray(len), id, list),
             (Type::IntArray(len), id, None) => {
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
                 format!("    %{} = alloc {}\n", id, ty_str)
@@ -113,12 +113,12 @@ impl Generator {
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
                 format!("global %{id} = alloc {ty_str}, zeroinit\n")
             }
-            (Type::IntArray(len), id, Some(Init::InitList(list))) => {
+            (Type::IntArray(len), id, Some(Init::List(list))) => {
                 let init_str = Self::init_list_to_str(&len, list);
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
                 format!("global %{id} = alloc {ty_str}, {init_str}\n")
             }
-            (Type::IntArray(len), id, Some(Init::ConstInitList(list))) => {
+            (Type::IntArray(len), id, Some(Init::ConstList(list))) => {
                 let init_str = Self::const_init_list_to_str(&len, list);
                 let ty_str = Type::IntArray(len).to_koopa_type_str();
                 format!("global %{id} = alloc {ty_str}, {init_str}\n")

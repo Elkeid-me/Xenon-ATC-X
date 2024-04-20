@@ -1,5 +1,5 @@
-use super::super::ast::Expr::{self, *};
 use super::Generator;
+use crate::frontend::ast::Expr::{self, *};
 
 impl Generator {
     pub fn arith_expr_helper(&mut self, l: Expr, r: Expr, op: &str) -> (String, String) {

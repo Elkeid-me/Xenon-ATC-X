@@ -1,5 +1,5 @@
-use super::super::ast::Expr::{self, *};
 use super::Generator;
+use crate::frontend::ast::Expr::{self, *};
 
 impl Generator {
     pub fn expr_dvalue(&mut self, expr: Expr) -> String {

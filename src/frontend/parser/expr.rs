@@ -179,11 +179,9 @@ impl ASTBuilder {
             Var(id) => match self.search(id) {
                 Some((Type::Int, _, Some(Init::Const(_)))) => Ok((RefType::Int, RValue, ConstEval)), // const 变量
                 Some((Type::Int, _, _)) => Ok((RefType::Int, LValue, NonConst)),                     // 普通变量
-                Some((Type::IntArray(_), _, Some(Init::ConstInitList(_)))) => {
-                    Err("孤立的 const 数组似乎干不了什么事...".to_string())
-                } // const 数组
+                Some((Type::IntArray(_), _, Some(Init::ConstList(_)))) => Err("孤立的 const 数组似乎干不了什么事...".to_string()), // const 数组
                 Some((Type::IntArray(len), _, _)) => Ok((RefType::IntPointer(&len[1..]), RValue, NonConst)), // 普通数组
-                Some((Type::IntPointer(len), _, _)) => Ok((RefType::IntPointer(len), RValue, NonConst)), // 普通指针
+                Some((Type::IntPointer(len), _, _)) => Ok((RefType::IntPointer(len), RValue, NonConst)),     // 普通指针
                 _ => Err(format!("标识符 {id} 在当前作用域不存在")),
             },
             Func(id, exprs) => match self.search(id) {
@@ -200,7 +198,7 @@ impl ASTBuilder {
                             _ => false,
                         };
                         if !valid {
-                            return Err(format!("{expr:?} 与类型 {expect_type:?} 不兼容"));
+                            return Err(format!("{expr:?} 与类型 {expect_type} 不兼容"));
                         }
                     }
                     Ok((ret_type.to_ref_type(), RValue, NonConst))
@@ -210,7 +208,7 @@ impl ASTBuilder {
             },
             Array(id, exprs, _) => match self.search(id) {
                 // const 数组
-                Some((Type::IntArray(len), _, Some(Init::ConstInitList(_)))) => match exprs.len().cmp(&len.len()) {
+                Some((Type::IntArray(len), _, Some(Init::ConstList(_)))) => match exprs.len().cmp(&len.len()) {
                     std::cmp::Ordering::Less => Err(format!("常量数组 {id} 不能转为指针")),
                     std::cmp::Ordering::Equal => {
                         let mut const_eval = true;
@@ -520,7 +518,7 @@ impl ASTBuilder {
                         (v, s, se)
                     });
                 match (subscripts_simplified.iter().all(|expr| matches!(expr, Num(_))), init) {
-                    (true, Some(Init::ConstInitList(l))) => {
+                    (true, Some(Init::ConstList(l))) => {
                         let mut r_ref = l;
                         for expr in subscripts_simplified.iter().take(subscripts_simplified.len() - 1) {
                             let i = expr.get_num() as usize;

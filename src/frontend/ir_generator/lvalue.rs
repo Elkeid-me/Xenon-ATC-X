@@ -1,5 +1,5 @@
-use super::super::ast::Expr::{self, *};
 use super::Generator;
+use crate::frontend::ast::Expr::{self, *};
 
 impl Generator {
     pub fn array_elem_lvalue(&mut self, id: String, subscripts: Vec<Expr>) -> (String, String) {
