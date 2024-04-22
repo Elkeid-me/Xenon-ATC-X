@@ -181,6 +181,14 @@ fun @main(): i32 {
 后端非常池沼，总的来说就是 \inlinec{t0} \~{} \inlinec{t3} 这几个寄存器来回倒腾；大部分东西都存在栈上，
 通过 \inlinec{sp} 访问；只有函数调用或者返回的时候才会碰一碰 \inlinec{a0} \~{} \inlinec{a7}。
 
+在生成汇编之后还有后处理步骤，即：
+\begin{itemize}
+    \item 如果 \inlinec{j label} 之后恰好就是 \inlinec{label}，则 \inlinec{j} 可以消除；
+    \item 消除了冗余的 \inlinec{lw}；
+    \item 对于偏移量不在 $-2048$ \~{} $2047$ 范围内的 \inlinec{j}、\inlinec{beqz} 或 \inlinec{bnez}，
+    使用 \inlinec{jr} 中转.
+\end{itemize}
+
 我不认为后端有介绍的必要。这部分就略过吧。
 \section{其他}
 本文的标题致敬 Wolfram Mathematica 参考文档《关于内部实现的一些注释》。
