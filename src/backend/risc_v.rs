@@ -33,6 +33,7 @@ pub enum Inst {
     Li(Reg, i32),
     La(Reg, String),
     Mv(Reg, Reg),
+    Jr(Reg),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -185,6 +186,7 @@ impl Display for Inst {
             Self::Li(rd, imm) => write!(f, "li {rd}, {imm}"),
             Self::La(rd, address) => write!(f, "la {rd}, {address}"),
             Self::Mv(rd, rs) => write!(f, "mv {rd}, {rs}"),
+            Self::Jr(rs) => write!(f, "jr {rs}"),
         }
     }
 }

@@ -1,8 +1,10 @@
 mod asm_generator;
 mod risc_v;
 
+use std::collections::HashMap;
+
 use generator::{done, Gn};
-use risc_v::{Inst::*, RiscV, RiscVItem::*};
+use risc_v::{Inst::*, Reg::*, RiscV, RiscVItem::*};
 
 fn post_process(rv: RiscV) -> RiscV {
     let mut g = Gn::new_scoped(move |mut s| {
@@ -60,7 +62,7 @@ fn post_process(rv: RiscV) -> RiscV {
         }
         done!()
     });
-    Gn::new_scoped(move |mut s| {
+    let g_2 = Gn::new_scoped(move |mut s| {
         loop {
             match g.next() {
                 Some(Inst(Sw(rd_1, offset_1, rs_1))) => match g.next() {
@@ -79,6 +81,42 @@ fn post_process(rv: RiscV) -> RiscV {
                         break;
                     }
                 },
+                Some(Inst(Li(rd_1, imm))) if imm <= 2047 && imm >= -2048 => match g.next() {
+                    Some(Inst(Add(rd_2, rs_1, rs_2))) | Some(Inst(Add(rd_2, rs_2, rs_1))) if rs_2 == rd_1 => {
+                        s.yield_(Inst(Addi(rd_2, rs_1, imm)));
+                    }
+                    Some(Inst(And(rd_2, rs_1, rs_2))) | Some(Inst(And(rd_2, rs_2, rs_1))) if rs_2 == rd_1 => {
+                        s.yield_(Inst(Andi(rd_2, rs_1, imm)));
+                    }
+                    Some(Inst(Xor(rd_2, rs_1, rs_2))) | Some(Inst(Xor(rd_2, rs_2, rs_1))) if rs_2 == rd_1 => {
+                        s.yield_(Inst(Xori(rd_2, rs_1, imm)));
+                    }
+                    Some(Inst(Or(rd_2, rs_1, rs_2))) | Some(Inst(Or(rd_2, rs_2, rs_1))) if rs_2 == rd_1 => {
+                        s.yield_(Inst(Ori(rd_2, rs_1, imm)));
+                    }
+                    Some(Inst(Sll(rd_2, rs_1, rs_2))) if rs_2 == rd_1 => {
+                        s.yield_(Inst(Slli(rd_2, rs_1, imm)));
+                    }
+                    Some(i) => {
+                        s.yield_(Inst(Li(rd_1, imm)));
+                        s.yield_(i);
+                    }
+                    None => {
+                        s.yield_(Inst(Li(rd_1, imm)));
+                    }
+                },
+                Some(Inst(Li(rd_1, imm))) if imm >= -2047 && imm <= 2048 => match g.next() {
+                    Some(Inst(Sub(rd_2, rs_1, rs_2))) if rs_2 == rd_1 => {
+                        s.yield_(Inst(Addi(rd_2, rs_1, -imm)));
+                    }
+                    Some(i) => {
+                        s.yield_(Inst(Li(rd_1, imm)));
+                        s.yield_(i);
+                    }
+                    None => {
+                        s.yield_(Inst(Li(rd_1, imm)));
+                    }
+                },
                 Some(i) => {
                     s.yield_(i);
                 }
@@ -86,8 +124,67 @@ fn post_process(rv: RiscV) -> RiscV {
             }
         }
         done!()
-    })
-    .collect()
+    });
+    let v: Vec<_> = g_2.collect();
+    let mut index = 0i64;
+    let labels: HashMap<_, _> = v
+        .iter()
+        .filter_map(|i| match i {
+            Label(label) => Some((label, index)),
+            Inst(_) => {
+                index += 4;
+                None
+            }
+            Directive(_) => None,
+        })
+        .collect();
+    let mut v_2 = RiscV::new();
+    let mut index_2 = 0i64;
+    for i in v.iter() {
+        match i {
+            Label(_) => v_2.push(i.clone()),
+            Inst(J(label)) => {
+                index_2 += 4;
+                let offset = labels.get(label).unwrap() - index_2;
+                if offset <= 2047 && offset >= -2048 {
+                    v_2.push(i.clone());
+                } else {
+                    v_2.push(Inst(La(T4, label.clone())));
+                    v_2.push(Inst(Jr(T4)));
+                }
+            }
+            Inst(Beqz(reg, label)) => {
+                index_2 += 4;
+                let offset = labels.get(label).unwrap() - index_2;
+                if offset <= 2047 && offset >= -2048 {
+                    v_2.push(i.clone());
+                } else {
+                    v_2.push(Inst(Bnez(*reg, format!("_T_{label}"))));
+                    v_2.push(Inst(La(T4, label.clone())));
+                    v_2.push(Inst(Jr(T4)));
+                    v_2.push(Label(format!("_T_{label}")));
+                }
+            }
+            Inst(Bnez(reg, label)) => {
+                index_2 += 4;
+                let offset = labels.get(label).unwrap() - index_2;
+                if offset <= 2047 && offset >= -2048 {
+                    v_2.push(i.clone());
+                } else {
+                    v_2.push(Inst(Beqz(*reg, format!("_T_{label}"))));
+                    v_2.push(Inst(La(T4, label.clone())));
+                    v_2.push(Inst(Jr(T4)));
+                    v_2.push(Label(format!("_T_{label}")));
+                }
+            }
+            Inst(_) => {
+                index_2 += 4;
+                v_2.push(i.clone());
+            }
+            Directive(_) => v_2.push(i.clone()),
+        }
+    }
+    v_2
 }
 
 pub fn generate_asm(ir: String) -> RiscV {
