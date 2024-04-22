@@ -2,35 +2,28 @@ use super::Generator;
 use crate::frontend::ast::{Expr::*, *};
 
 impl Generator {
-    fn while_statement_cond_neq_0(&mut self, cond: Expr, block: Block) -> String {
-        let while_id = self.counter.get();
-        let while_next_id = self.counter.get();
-        let (cond_str, cond_id) = self.expr_rvalue(cond);
-        let (block_str, block_id) = self.block(block, &while_id, &while_next_id);
-        format!(
-            r"    jump {while_id}
-{block_id}:
-{block_str}    jump {while_id}
-{while_id}:
-{cond_str}    br {cond_id}, {block_id}, {while_next_id}
-{while_next_id}:
-"
-        )
-    }
-    fn while_statement_cond_eq_0(&mut self, cond: Expr, block: Block) -> String {
-        let while_id = self.counter.get();
-        let while_next_id = self.counter.get();
-        let (cond_str, cond_id) = self.expr_rvalue(cond);
-        let (block_str, block_id) = self.block(block, &while_id, &while_next_id);
-        format!(
-            r"    jump {while_id}
-{block_id}:
-{block_str}    jump {while_id}
-{while_id}:
-{cond_str}    br {cond_id}, {while_next_id}, {block_id}
-{while_next_id}:
-"
-        )
+    fn cond_expr(&mut self, cond: Expr, then_label: &str, else_label: &str) -> String {
+        match cond {
+            Num(0) => format!("    jump {else_label}\n"),
+            Num(_) => format!("    jump {then_label}\n"),
+            LogicAnd(l, r) => {
+                let label = self.counter.get();
+                format!("{}{label}:\n{}", self.cond_expr(*l, &label, else_label), self.cond_expr(*r, then_label, else_label))
+            }
+            LogicOr(l, r) => {
+                let label = self.counter.get();
+                format!("{}{label}:\n{}", self.cond_expr(*l, then_label, &label), self.cond_expr(*r, then_label, else_label))
+            }
+            Eq(expr, num) | Eq(num, expr) if matches!(*num, Num(0)) => self.cond_expr(*expr, else_label, then_label),
+            Neq(expr, num) | Neq(expr, num) if matches!(*num, Num(0)) => self.cond_expr(*expr, then_label, else_label),
+
+            LogicNot(expr) => self.cond_expr(*expr, else_label, then_label),
+
+            _ => {
+                let (cond_eval, cond_id) = self.expr_rvalue(cond);
+                format!("{cond_eval}    br {cond_id}, {then_label}, {else_label}\n")
+            }
+        }
     }
     fn while_statement(&mut self, cond: Expr, block: Block) -> String {
         match cond {
@@ -47,198 +40,65 @@ impl Generator {
 "
                 )
             }
-            LogicOr(l, r) => {
+            _ => {
                 let while_id = self.counter.get();
                 let while_next_id = self.counter.get();
                 let (block_str, block_id) = self.block(block, &while_id, &while_next_id);
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                let eval_r_id = self.counter.get();
+                let cond_str = self.cond_expr(cond, &block_id, &while_next_id);
                 format!(
                     r"    jump {while_id}
 {block_id}:
 {block_str}    jump {while_id}
 {while_id}:
-{l_eval}    br {l_id}, {block_id}, {eval_r_id}
-{eval_r_id}:
-{r_eval}    br {r_id}, {block_id}, {while_next_id}
-{while_next_id}:
+{cond_str}{while_next_id}:
 "
                 )
             }
-            LogicAnd(l, r) => {
-                let while_id = self.counter.get();
-                let while_next_id = self.counter.get();
-                let (block_str, block_id) = self.block(block, &while_id, &while_next_id);
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                let eval_r_id = self.counter.get();
-                format!(
-                    r"    jump {while_id}
-{block_id}:
-{block_str}    jump {while_id}
-{while_id}:
-{l_eval}    br {l_id}, {eval_r_id}, {while_next_id}
-{eval_r_id}:
-{r_eval}    br {r_id}, {block_id}, {while_next_id}
-{while_next_id}:
-"
-                )
-            }
-            LogicNot(expr) => self.while_statement_cond_eq_0(*expr, block),
-            Eq(expr, num) | Eq(num, expr) if matches!(*num, Num(0)) => self.while_statement_cond_eq_0(*expr, block),
-            Neq(expr, num) | Neq(num, expr) if matches!(*num, Num(0)) => self.while_statement_cond_neq_0(*expr, block),
-            _ => self.while_statement_cond_neq_0(cond, block),
-        }
-    }
-    fn if_statement_cond_eq_0(
-        &mut self,
-        cond: Expr,
-        then_block: Block,
-        else_block: Block,
-        while_id: &str,
-        while_next_id: &str,
-    ) -> String {
-        let next_block_id = self.counter.get();
-        let (cond_eval, cond_id) = self.expr_rvalue(cond);
-        let (then_str, then_id) = self.block(then_block, while_id, while_next_id);
-        if else_block.is_empty() {
-            format!(
-                r"{cond_eval}    br {cond_id}, {next_block_id}, {then_id}
-{then_id}:
-{then_str}    jump {next_block_id}
-{next_block_id}:
-"
-            )
-        } else {
-            let (else_str, else_id) = self.block(else_block, while_id, while_next_id);
-            format!(
-                r"{cond_eval}    br {cond_id}, {else_id}, {then_id}
-{then_id}:
-{then_str}    jump {next_block_id}
-{else_id}:
-{else_str}    jump {next_block_id}
-{next_block_id}:
-"
-            )
-        }
-    }
-    fn if_statement_cond_neq_0(
-        &mut self,
-        cond: Expr,
-        then_block: Block,
-        else_block: Block,
-        while_id: &str,
-        while_next_id: &str,
-    ) -> String {
-        let next_block_id = self.counter.get();
-        let (cond_eval, cond_id) = self.expr_rvalue(cond);
-        let (then_str, then_id) = self.block(then_block, while_id, while_next_id);
-        if else_block.is_empty() {
-            format!(
-                r"{cond_eval}    br {cond_id}, {then_id}, {next_block_id}
-{then_id}:
-{then_str}    jump {next_block_id}
-{next_block_id}:
-"
-            )
-        } else {
-            let (else_str, else_id) = self.block(else_block, while_id, while_next_id);
-            format!(
-                r"{cond_eval}    br {cond_id}, {then_id}, {else_id}
-{then_id}:
-{then_str}    jump {next_block_id}
-{else_id}:
-{else_str}    jump {next_block_id}
-{next_block_id}:
-"
-            )
         }
     }
     fn if_statement(&mut self, cond: Expr, then_block: Block, else_block: Block, while_id: &str, while_next_id: &str) -> String {
-        match cond {
-            Num(0) => {
-                if else_block.is_empty() {
-                    String::new()
-                } else {
-                    let (else_str, _) = self.block(else_block, while_id, while_next_id);
-                    else_str
-                }
+        match (then_block.is_empty(), else_block.is_empty()) {
+            (true, true) => {
+                let next_id = self.counter.get();
+                let cond_str = self.cond_expr(cond, &next_id, &next_id);
+                format!("{cond_str}{next_id}:\n")
             }
-            Num(_) => {
-                let (then_str, _) = self.block(then_block, while_id, while_next_id);
-                then_str
-            }
-            LogicAnd(l, r) => {
-                let next_block_id = self.counter.get();
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                let (then_str, then_id) = self.block(then_block, while_id, while_next_id);
-                let eval_r_id = self.counter.get();
-                if else_block.is_empty() {
-                    format!(
-                        r"{l_eval}    br {l_id}, {eval_r_id}, {next_block_id}
-{eval_r_id}:
-{r_eval}    br {r_id}, {then_id}, {next_block_id}
-{then_id}:
-{then_str}    jump {next_block_id}
-{next_block_id}:
+            (false, true) => {
+                let next_id = self.counter.get();
+                let (then_block_str, then_id) = self.block(then_block, &while_id, &while_next_id);
+                let cond_str = self.cond_expr(cond, &then_id, &next_id);
+                format!(
+                    r"{cond_str}{then_id}:
+{then_block_str}    jump {next_id}
+{next_id}:
 "
-                    )
-                } else {
-                    let (else_str, else_id) = self.block(else_block, while_id, while_next_id);
-                    format!(
-                        r"{l_eval}    br {l_id}, {eval_r_id}, {else_id}
-{eval_r_id}:
-{r_eval}    br {r_id}, {then_id}, {else_id}
-{then_id}:
-{then_str}    jump {next_block_id}
+                )
+            }
+            (true, false) => {
+                let next_id = self.counter.get();
+                let (else_block_str, else_id) = self.block(else_block, &while_id, &while_next_id);
+                let cond_str = self.cond_expr(cond, &next_id, &else_id);
+                format!(
+                    r"{cond_str}{else_id}:
+{else_block_str}    jump {next_id}
+{next_id}:
+"
+                )
+            }
+            (false, false) => {
+                let next_id = self.counter.get();
+                let (then_block_str, then_id) = self.block(then_block, &while_id, &while_next_id);
+                let (else_block_str, else_id) = self.block(else_block, &while_id, &while_next_id);
+                let cond_str = self.cond_expr(cond, &then_id, &else_id);
+                format!(
+                    r"{cond_str}{then_id}:
+{then_block_str}    jump {next_id}
 {else_id}:
-{else_str}    jump {next_block_id}
-{next_block_id}:
+{else_block_str}    jump {next_id}
+{next_id}:
 "
-                    )
-                }
+                )
             }
-            LogicOr(l, r) => {
-                let next_block_id = self.counter.get();
-                let (l_eval, l_id) = self.expr_rvalue(*l);
-                let (r_eval, r_id) = self.expr_rvalue(*r);
-                let (then_str, then_id) = self.block(then_block, while_id, while_next_id);
-                let eval_r_id = self.counter.get();
-                if else_block.is_empty() {
-                    format!(
-                        r"{l_eval}    br {l_id}, {then_id}, {eval_r_id}
-{eval_r_id}:
-{r_eval}    br {r_id}, {then_id}, {next_block_id}
-{then_id}:
-{then_str}    jump {next_block_id}
-{next_block_id}:
-"
-                    )
-                } else {
-                    let (else_str, else_id) = self.block(else_block, while_id, while_next_id);
-                    format!(
-                        r"{l_eval}    br {l_id}, {then_id}, {eval_r_id}
-{eval_r_id}:
-{r_eval}    br {r_id}, {then_id}, {else_id}
-{then_id}:
-{then_str}    jump {next_block_id}
-{else_id}:
-{else_str}    jump {next_block_id}
-{next_block_id}:
-"
-                    )
-                }
-            }
-            LogicNot(expr) => self.if_statement_cond_eq_0(*expr, then_block, else_block, while_id, while_next_id),
-            Eq(expr, num) | Eq(num, expr) if matches!(*num, Num(0)) => {
-                self.if_statement_cond_eq_0(*expr, then_block, else_block, while_id, while_next_id)
-            }
-            Neq(expr, num) | Neq(num, expr) if matches!(*num, Num(0)) => {
-                self.if_statement_cond_neq_0(*expr, then_block, else_block, while_id, while_next_id)
-            }
-            _ => self.if_statement_cond_neq_0(cond, then_block, else_block, while_id, while_next_id),
         }
     }
     pub fn statement(&mut self, statement: Statement, while_id: &str, while_next_id: &str) -> String {
