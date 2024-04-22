@@ -28,12 +28,11 @@ fn compile() -> Result<(), Box<dyn std::error::Error>> {
     let ir = generate_ir(&code)?;
     match mode {
         Mode::Koopa => write!(f, "{ir}")?,
-        Mode::RiscV => {
+        Mode::RiscV | Mode::Optimization => {
             for item in generate_asm(ir) {
                 write!(f, "{item}")?;
             }
         }
-        _ => todo!(),
     }
     Ok(())
 }

@@ -26,7 +26,9 @@ pub enum Inst {
     Sll(Reg, Reg, Reg),
     Slli(Reg, Reg, i32),
     Srl(Reg, Reg, Reg),
+    Srli(Reg, Reg, i32),
     Sra(Reg, Reg, Reg),
+    Srai(Reg, Reg, i32),
     Mul(Reg, Reg, Reg),
     Div(Reg, Reg, Reg),
     Rem(Reg, Reg, Reg),
@@ -168,6 +170,8 @@ impl Display for Inst {
             Self::Ori(rd, rs, imm) => write!(f, "ori {rd}, {rs}, {imm}"),
             Self::Andi(rd, rs, imm) => write!(f, "andi {rd}, {rs}, {imm}"),
             Self::Slli(rd, rs, imm) => write!(f, "slli {rd}, {rs}, {imm}"),
+            Self::Srli(rd, rs, imm) => write!(f, "srli {rd}, {rs}, {imm}"),
+            Self::Srai(rd, rs, imm) => write!(f, "srai {rd}, {rs}, {imm}"),
 
             Self::Add(rd, rs1, rs2) => write!(f, "add {rd}, {rs1}, {rs2}"),
             Self::Sub(rd, rs1, rs2) => write!(f, "sub {rd}, {rs1}, {rs2}"),

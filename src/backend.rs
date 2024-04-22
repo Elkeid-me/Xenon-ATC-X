@@ -81,42 +81,6 @@ fn post_process(rv: RiscV) -> RiscV {
                         break;
                     }
                 },
-                Some(Inst(Li(rd_1, imm))) if imm <= 2047 && imm >= -2048 => match g.next() {
-                    Some(Inst(Add(rd_2, rs_1, rs_2))) | Some(Inst(Add(rd_2, rs_2, rs_1))) if rs_2 == rd_1 => {
-                        s.yield_(Inst(Addi(rd_2, rs_1, imm)));
-                    }
-                    Some(Inst(And(rd_2, rs_1, rs_2))) | Some(Inst(And(rd_2, rs_2, rs_1))) if rs_2 == rd_1 => {
-                        s.yield_(Inst(Andi(rd_2, rs_1, imm)));
-                    }
-                    Some(Inst(Xor(rd_2, rs_1, rs_2))) | Some(Inst(Xor(rd_2, rs_2, rs_1))) if rs_2 == rd_1 => {
-                        s.yield_(Inst(Xori(rd_2, rs_1, imm)));
-                    }
-                    Some(Inst(Or(rd_2, rs_1, rs_2))) | Some(Inst(Or(rd_2, rs_2, rs_1))) if rs_2 == rd_1 => {
-                        s.yield_(Inst(Ori(rd_2, rs_1, imm)));
-                    }
-                    Some(Inst(Sll(rd_2, rs_1, rs_2))) if rs_2 == rd_1 => {
-                        s.yield_(Inst(Slli(rd_2, rs_1, imm)));
-                    }
-                    Some(i) => {
-                        s.yield_(Inst(Li(rd_1, imm)));
-                        s.yield_(i);
-                    }
-                    None => {
-                        s.yield_(Inst(Li(rd_1, imm)));
-                    }
-                },
-                Some(Inst(Li(rd_1, imm))) if imm >= -2047 && imm <= 2048 => match g.next() {
-                    Some(Inst(Sub(rd_2, rs_1, rs_2))) if rs_2 == rd_1 => {
-                        s.yield_(Inst(Addi(rd_2, rs_1, -imm)));
-                    }
-                    Some(i) => {
-                        s.yield_(Inst(Li(rd_1, imm)));
-                        s.yield_(i);
-                    }
-                    None => {
-                        s.yield_(Inst(Li(rd_1, imm)));
-                    }
-                },
                 Some(i) => {
                     s.yield_(i);
                 }

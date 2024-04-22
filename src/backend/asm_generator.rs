@@ -255,43 +255,106 @@ fn gen_value(
             insts.extend(store_value(context, value, base_reg));
         }
         Binary(binary) => {
-            let lhs = binary.lhs();
-            let mut rs1 = Reg::T0;
-            insts.extend(load_value(context, func_data, lhs, &mut rs1));
-            let rhs = binary.rhs();
-            let mut rs2 = Reg::T1;
-            insts.extend(load_value(context, func_data, rhs, &mut rs2));
             let rd = Reg::T2;
-            match binary.op() {
-                BinaryOp::NotEq => {
-                    insts.add_inst(Inst::Xor(rd, rs1, rs2));
-                    insts.add_inst(Inst::Snez(rd, rd));
+            match (binary.lhs(), binary.op(), binary.rhs()) {
+                (l, BinaryOp::Mul, r) | (r, BinaryOp::Mul, l) if matches!(func_data.dfg().value(l).kind(), Integer(i) if i.value().count_ones() == 1) =>
+                {
+                    let imm = risk!(func_data.dfg().value(l).kind(), Integer(i) => i.value());
+                    let mut rs = Reg::T0;
+                    insts.extend(load_value(context, func_data, r, &mut rs));
+                    insts.add_inst(Inst::Slli(rd, rs, imm.trailing_zeros() as i32));
                 }
-                BinaryOp::Eq => {
-                    insts.add_inst(Inst::Xor(rd, rs1, rs2));
-                    insts.add_inst(Inst::Seqz(rd, rd));
+                (l, BinaryOp::Sub, r) if matches!(func_data.dfg().value(r).kind(), Integer(i) if i.value() >= -2047 && i.value() <= 2048) =>
+                {
+                    let imm = risk!(func_data.dfg().value(r).kind(), Integer(i) => i.value());
+                    let mut rs = Reg::T0;
+                    insts.extend(load_value(context, func_data, l, &mut rs));
+                    insts.add_inst(Inst::Addi(rd, rs, -imm));
                 }
-                BinaryOp::Gt => insts.add_inst(Inst::Sgt(rd, rs1, rs2)),
-                BinaryOp::Lt => insts.add_inst(Inst::Slt(rd, rs1, rs2)),
-                BinaryOp::Ge => {
-                    insts.add_inst(Inst::Slt(rd, rs1, rs2));
-                    insts.add_inst(Inst::Seqz(rd, rd));
+                (l, BinaryOp::Shl, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) =>
+                {
+                    let imm = risk!(func_data.dfg().value(r).kind(), Integer(i) => i.value());
+                    let mut rs = Reg::T0;
+                    insts.extend(load_value(context, func_data, l, &mut rs));
+                    insts.add_inst(Inst::Slli(rd, rs, imm & 31));
                 }
-                BinaryOp::Le => {
-                    insts.add_inst(Inst::Sgt(rd, rs1, rs2));
-                    insts.add_inst(Inst::Seqz(rd, rd));
+                (l, BinaryOp::Shr, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) =>
+                {
+                    let imm = risk!(func_data.dfg().value(r).kind(), Integer(i) => i.value());
+                    let mut rs = Reg::T0;
+                    insts.extend(load_value(context, func_data, l, &mut rs));
+                    insts.add_inst(Inst::Srai(rd, rs, imm & 31));
                 }
-                BinaryOp::Add => insts.add_inst(Inst::Add(rd, rs1, rs2)),
-                BinaryOp::Sub => insts.add_inst(Inst::Sub(rd, rs1, rs2)),
-                BinaryOp::Mul => insts.add_inst(Inst::Mul(rd, rs1, rs2)),
-                BinaryOp::Div => insts.add_inst(Inst::Div(rd, rs1, rs2)),
-                BinaryOp::Mod => insts.add_inst(Inst::Rem(rd, rs1, rs2)),
-                BinaryOp::And => insts.add_inst(Inst::And(rd, rs1, rs2)),
-                BinaryOp::Or => insts.add_inst(Inst::Or(rd, rs1, rs2)),
-                BinaryOp::Xor => insts.add_inst(Inst::Xor(rd, rs1, rs2)),
-                BinaryOp::Shl => insts.add_inst(Inst::Sll(rd, rs1, rs2)),
-                BinaryOp::Shr => insts.add_inst(Inst::Srl(rd, rs1, rs2)),
-                BinaryOp::Sar => insts.add_inst(Inst::Sra(rd, rs1, rs2)),
+                (l, BinaryOp::Sar, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) =>
+                {
+                    let imm = risk!(func_data.dfg().value(l).kind(), Integer(i) => i.value());
+                    let mut rs = Reg::T0;
+                    insts.extend(load_value(context, func_data, r, &mut rs));
+                    insts.add_inst(Inst::Srli(rd, rs, imm & 31));
+                }
+                (l, op, r) | (r, op, l)
+                    if matches!(func_data.dfg().value(l).kind(), Integer(i) if i.value() >= -2048 && i.value() <= 2047)
+                        && matches!(
+                            op,
+                            BinaryOp::NotEq | BinaryOp::Eq | BinaryOp::Add | BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
+                        ) =>
+                {
+                    let imm = risk!(func_data.dfg().value(l).kind(), Integer(i) => i.value());
+                    let mut rs = Reg::T0;
+                    insts.extend(load_value(context, func_data, r, &mut rs));
+                    match op {
+                        BinaryOp::NotEq => {
+                            insts.add_inst(Inst::Xori(rd, rs, imm));
+                            insts.add_inst(Inst::Snez(rd, rd));
+                        }
+                        BinaryOp::Eq => {
+                            insts.add_inst(Inst::Xori(rd, rs, imm));
+                            insts.add_inst(Inst::Seqz(rd, rd));
+                        }
+                        BinaryOp::Add => insts.add_inst(Inst::Addi(rd, rs, imm)),
+                        BinaryOp::And => insts.add_inst(Inst::Andi(rd, rs, imm)),
+                        BinaryOp::Or => insts.add_inst(Inst::Ori(rd, rs, imm)),
+                        BinaryOp::Xor => insts.add_inst(Inst::Xori(rd, rs, imm)),
+                        _ => unreachable!(),
+                    }
+                }
+                (l, op, r) => {
+                    let mut rs1 = Reg::T0;
+                    insts.extend(load_value(context, func_data, l, &mut rs1));
+                    let mut rs2 = Reg::T1;
+                    insts.extend(load_value(context, func_data, r, &mut rs2));
+                    match op {
+                        BinaryOp::NotEq => {
+                            insts.add_inst(Inst::Xor(rd, rs1, rs2));
+                            insts.add_inst(Inst::Snez(rd, rd));
+                        }
+                        BinaryOp::Eq => {
+                            insts.add_inst(Inst::Xor(rd, rs1, rs2));
+                            insts.add_inst(Inst::Seqz(rd, rd));
+                        }
+                        BinaryOp::Gt => insts.add_inst(Inst::Sgt(rd, rs1, rs2)),
+                        BinaryOp::Lt => insts.add_inst(Inst::Slt(rd, rs1, rs2)),
+                        BinaryOp::Ge => {
+                            insts.add_inst(Inst::Slt(rd, rs1, rs2));
+                            insts.add_inst(Inst::Seqz(rd, rd));
+                        }
+                        BinaryOp::Le => {
+                            insts.add_inst(Inst::Sgt(rd, rs1, rs2));
+                            insts.add_inst(Inst::Seqz(rd, rd));
+                        }
+                        BinaryOp::Add => insts.add_inst(Inst::Add(rd, rs1, rs2)),
+                        BinaryOp::Sub => insts.add_inst(Inst::Sub(rd, rs1, rs2)),
+                        BinaryOp::Mul => insts.add_inst(Inst::Mul(rd, rs1, rs2)),
+                        BinaryOp::Div => insts.add_inst(Inst::Div(rd, rs1, rs2)),
+                        BinaryOp::Mod => insts.add_inst(Inst::Rem(rd, rs1, rs2)),
+                        BinaryOp::And => insts.add_inst(Inst::And(rd, rs1, rs2)),
+                        BinaryOp::Or => insts.add_inst(Inst::Or(rd, rs1, rs2)),
+                        BinaryOp::Xor => insts.add_inst(Inst::Xor(rd, rs1, rs2)),
+                        BinaryOp::Shl => insts.add_inst(Inst::Sll(rd, rs1, rs2)),
+                        BinaryOp::Shr => insts.add_inst(Inst::Srl(rd, rs1, rs2)),
+                        BinaryOp::Sar => insts.add_inst(Inst::Sra(rd, rs1, rs2)),
+                    }
+                }
             }
             insts.extend(store_value(context, value, rd));
         }
