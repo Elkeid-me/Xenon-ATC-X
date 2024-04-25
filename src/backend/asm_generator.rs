@@ -1,15 +1,16 @@
-use super::risc_v::*;
+use super::risc_v::{Reg::*, *};
 use crate::risk;
 use koopa::ir::{entities::ValueData, BasicBlock, BinaryOp, FunctionData, Program, Type, TypeKind, Value, ValueKind::*};
 use std::{cmp::max, collections::HashMap, vec};
 
-const CALL_REGS: [Reg; 8] = [Reg::A0, Reg::A1, Reg::A2, Reg::A3, Reg::A4, Reg::A5, Reg::A6, Reg::A7];
+const CALL_REGS: [Reg; 8] = [A0, A1, A2, A3, A4, A5, A6, A7];
 
 struct Context {
     vars: HashMap<Value, i32>,
     labels: HashMap<BasicBlock, String>,
     frame_size: i32,
     save_ra: bool,
+    save_s0: bool,
 }
 fn generate_context(func_data: &FunctionData) -> Context {
     let name = &func_data.name()[1..];
@@ -33,7 +34,7 @@ fn generate_context(func_data: &FunctionData) -> Context {
             _ => None,
         })
         .collect();
-    let args_size = calls.iter().map(|len| max(len - 8, 0)).max().unwrap_or(0) * 4;
+    let args_size = calls.iter().map(|len| max(len - 7, 1)).max().unwrap_or(0) * 4;
     frame_size += args_size;
     let mut vars = HashMap::new();
     for node in func_data.layout().bbs().nodes() {
@@ -57,13 +58,14 @@ fn generate_context(func_data: &FunctionData) -> Context {
         frame_size += 4;
     }
     frame_size = (frame_size + 15) & !15;
-    Context { vars, labels, frame_size, save_ra }
+    let save_s0 = frame_size > 2048;
+    Context { vars, labels, frame_size, save_ra, save_s0 }
 }
 
 fn load_value(context: &Context, func_data: &FunctionData, value: Value, reg: &mut Reg) -> RiscV {
     match func_data.dfg().value(value).kind() {
         Integer(i) if i.value() == 0 => {
-            *reg = Reg::Zero;
+            *reg = Zero;
             RiscV::new()
         }
         Integer(i) => vec![RiscVItem::Inst(Inst::Li(*reg, i.value()))],
@@ -76,11 +78,13 @@ fn load_value(context: &Context, func_data: &FunctionData, value: Value, reg: &m
                 // 第 9 个参数的 index 为 8，而第 9 个参数的 offset 为 0.
                 let offset = (index - 8) as i32 * 4 + context.frame_size;
                 if offset <= 2047 {
-                    vec![RiscVItem::Inst(Inst::Lw(*reg, offset, Reg::Sp))]
+                    vec![RiscVItem::Inst(Inst::Lw(*reg, offset, Sp))]
+                } else if context.save_s0 && (index - 8) as i32 * 4 <= 2047 {
+                    vec![RiscVItem::Inst(Inst::Lw(*reg, offset, S0))]
                 } else {
                     vec![
                         RiscVItem::Inst(Inst::Li(*reg, offset)),
-                        RiscVItem::Inst(Inst::Add(*reg, Reg::Sp, *reg)),
+                        RiscVItem::Inst(Inst::Add(*reg, Sp, *reg)),
                         RiscVItem::Inst(Inst::Lw(*reg, 0, *reg)),
                     ]
                 }
@@ -89,11 +93,13 @@ fn load_value(context: &Context, func_data: &FunctionData, value: Value, reg: &m
         _ => {
             let offset = *context.vars.get(&value).unwrap();
             if offset <= 2047 {
-                vec![RiscVItem::Inst(Inst::Lw(*reg, offset, Reg::Sp))]
+                vec![RiscVItem::Inst(Inst::Lw(*reg, offset, Sp))]
+            } else if context.frame_size - offset <= 2048 {
+                vec![RiscVItem::Inst(Inst::Lw(*reg, offset - context.frame_size, S0))]
             } else {
                 vec![
                     RiscVItem::Inst(Inst::Li(*reg, offset)),
-                    RiscVItem::Inst(Inst::Add(*reg, Reg::Sp, *reg)),
+                    RiscVItem::Inst(Inst::Add(*reg, Sp, *reg)),
                     RiscVItem::Inst(Inst::Lw(*reg, 0, *reg)),
                 ]
             }
@@ -104,13 +110,11 @@ fn load_value(context: &Context, func_data: &FunctionData, value: Value, reg: &m
 fn store_value(context: &Context, value: Value, reg: Reg) -> RiscV {
     let offset = *context.vars.get(&value).unwrap();
     if offset <= 2047 {
-        vec![RiscVItem::Inst(Inst::Sw(reg, offset, Reg::Sp))]
+        vec![RiscVItem::Inst(Inst::Sw(reg, offset, Sp))]
+    } else if context.frame_size - offset <= 2048 {
+        vec![RiscVItem::Inst(Inst::Sw(reg, offset - context.frame_size, S0))]
     } else {
-        vec![
-            RiscVItem::Inst(Inst::Li(Reg::T3, offset)),
-            RiscVItem::Inst(Inst::Add(Reg::T3, Reg::Sp, Reg::T3)),
-            RiscVItem::Inst(Inst::Sw(reg, 0, Reg::T3)),
-        ]
+        vec![RiscVItem::Inst(Inst::Li(T3, offset)), RiscVItem::Inst(Inst::Add(T3, Sp, T3)), RiscVItem::Inst(Inst::Sw(reg, 0, T3))]
     }
 }
 
@@ -123,21 +127,21 @@ fn get_ptr(
     step: i32,
 ) -> (RiscV, Reg) {
     let mut insts = RiscV::new();
-    let mut base_reg = Reg::T0;
-    let mut index_reg = Reg::T1;
-    let step_reg = Reg::T2;
+    let mut base_reg = T0;
+    let mut index_reg = T1;
+    let step_reg = T2;
     if global_vars.contains_key(&base) {
         let addr = global_vars.get(&base).unwrap();
-        insts.add_inst(Inst::La(Reg::T0, addr.clone()))
+        insts.add_inst(Inst::La(T0, addr.clone()))
     } else {
         match func_data.dfg().value(base).kind() {
             Alloc(_) => {
                 let offset = *context.vars.get(&base).unwrap();
                 if offset <= 2047 {
-                    insts.add_inst(Inst::Addi(base_reg, Reg::Sp, offset));
+                    insts.add_inst(Inst::Addi(base_reg, Sp, offset));
                 } else {
                     insts.add_inst(Inst::Li(base_reg, offset));
-                    insts.add_inst(Inst::Add(base_reg, Reg::Sp, base_reg));
+                    insts.add_inst(Inst::Add(base_reg, Sp, base_reg));
                 }
             }
             _ => insts.extend(load_value(context, func_data, base, &mut base_reg)),
@@ -165,74 +169,84 @@ fn gen_value(
             let src = load.src();
             if global_vars.contains_key(&src) {
                 let addr = global_vars.get(&src).unwrap();
-                insts.add_inst(Inst::La(Reg::T0, addr.clone()));
-                insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                insts.add_inst(Inst::La(T0, addr.clone()));
+                insts.add_inst(Inst::Lw(T0, 0, T0));
             } else {
                 match func_data.dfg().value(src).kind() {
                     Alloc(_) => {
                         let offset = *context.vars.get(&src).unwrap();
                         if offset <= 2047 {
-                            insts.add_inst(Inst::Lw(Reg::T0, offset, Reg::Sp));
+                            insts.add_inst(Inst::Lw(T0, offset, Sp));
+                        } else if context.frame_size - offset <= 2048 {
+                            insts.add_inst(Inst::Lw(T0, offset - context.frame_size, S0));
                         } else {
-                            insts.add_inst(Inst::Li(Reg::T0, offset));
-                            insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
-                            insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                            insts.add_inst(Inst::Li(T0, offset));
+                            insts.add_inst(Inst::Add(T0, Sp, T0));
+                            insts.add_inst(Inst::Lw(T0, 0, T0));
                         }
                     }
                     _ => {
                         let offset = *context.vars.get(&src).unwrap();
                         if offset <= 2047 {
-                            insts.add_inst(Inst::Lw(Reg::T0, offset, Reg::Sp));
-                            insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                            insts.add_inst(Inst::Lw(T0, offset, Sp));
+                            insts.add_inst(Inst::Lw(T0, 0, T0));
+                        } else if context.frame_size - offset <= 2048 {
+                            insts.add_inst(Inst::Lw(T0, offset - context.frame_size, S0));
+                            insts.add_inst(Inst::Lw(T0, 0, T0));
                         } else {
-                            insts.add_inst(Inst::Li(Reg::T0, offset));
-                            insts.add_inst(Inst::Add(Reg::T0, Reg::Sp, Reg::T0));
-                            insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
-                            insts.add_inst(Inst::Lw(Reg::T0, 0, Reg::T0));
+                            insts.add_inst(Inst::Li(T0, offset));
+                            insts.add_inst(Inst::Add(T0, Sp, T0));
+                            insts.add_inst(Inst::Lw(T0, 0, T0));
+                            insts.add_inst(Inst::Lw(T0, 0, T0));
                         }
                     }
                 }
             }
             let offset = *context.vars.get(&value).unwrap();
             if offset <= 2047 {
-                insts.add_inst(Inst::Sw(Reg::T0, offset, Reg::Sp));
+                insts.add_inst(Inst::Sw(T0, offset, Sp));
             } else {
-                insts.add_inst(Inst::Li(Reg::T1, offset));
-                insts.add_inst(Inst::Add(Reg::T1, Reg::Sp, Reg::T1));
-                insts.add_inst(Inst::Sw(Reg::T0, 0, Reg::T1));
+                insts.add_inst(Inst::Li(T1, offset));
+                insts.add_inst(Inst::Add(T1, Sp, T1));
+                insts.add_inst(Inst::Sw(T0, 0, T1));
             }
         }
         Store(store) => {
             let src = store.value();
             let dst = store.dest();
-            let mut src_reg = Reg::T0;
+            let mut src_reg = T0;
             insts.extend(load_value(context, func_data, src, &mut src_reg));
             if global_vars.contains_key(&dst) {
                 let addr = global_vars.get(&dst).unwrap();
-                insts.add_inst(Inst::La(Reg::T1, addr.clone()));
-                insts.add_inst(Inst::Sw(src_reg, 0, Reg::T1));
+                insts.add_inst(Inst::La(T1, addr.clone()));
+                insts.add_inst(Inst::Sw(src_reg, 0, T1));
             } else {
                 match func_data.dfg().value(dst).kind() {
                     Alloc(_) => {
                         let offset = *context.vars.get(&dst).unwrap();
                         if offset <= 2047 {
-                            insts.add_inst(Inst::Sw(src_reg, offset, Reg::Sp));
+                            insts.add_inst(Inst::Sw(src_reg, offset, Sp));
+                        } else if context.frame_size - offset <= 2048 {
+                            insts.add_inst(Inst::Sw(src_reg, offset - context.frame_size, S0));
                         } else {
-                            insts.add_inst(Inst::Li(Reg::T1, offset));
-                            insts.add_inst(Inst::Add(Reg::T1, Reg::Sp, Reg::T1));
-                            insts.add_inst(Inst::Sw(src_reg, 0, Reg::T1));
+                            insts.add_inst(Inst::Li(T1, offset));
+                            insts.add_inst(Inst::Add(T1, Sp, T1));
+                            insts.add_inst(Inst::Sw(src_reg, 0, T1));
                         }
                     }
                     _ => {
                         let offset = *context.vars.get(&dst).unwrap();
                         if offset <= 2047 {
-                            insts.add_inst(Inst::Lw(Reg::T1, offset, Reg::Sp));
-                            insts.add_inst(Inst::Sw(src_reg, 0, Reg::T1));
+                            insts.add_inst(Inst::Lw(T1, offset, Sp));
+                            insts.add_inst(Inst::Sw(src_reg, 0, T1));
+                        } else if context.frame_size - offset <= 2048 {
+                            insts.add_inst(Inst::Lw(T1, offset - context.frame_size, S0));
+                            insts.add_inst(Inst::Sw(src_reg, 0, T1));
                         } else {
-                            insts.add_inst(Inst::Li(Reg::T1, offset));
-                            insts.add_inst(Inst::Add(Reg::T1, Reg::Sp, Reg::T1));
-                            insts.add_inst(Inst::Lw(Reg::T1, 0, Reg::T1));
-                            insts.add_inst(Inst::Sw(src_reg, 0, Reg::T1));
+                            insts.add_inst(Inst::Li(T1, offset));
+                            insts.add_inst(Inst::Add(T1, Sp, T1));
+                            insts.add_inst(Inst::Lw(T1, 0, T1));
+                            insts.add_inst(Inst::Sw(src_reg, 0, T1));
                         }
                     }
                 }
@@ -255,40 +269,37 @@ fn gen_value(
             insts.extend(store_value(context, value, base_reg));
         }
         Binary(binary) => {
-            let rd = Reg::T2;
+            let rd = T2;
             match (binary.lhs(), binary.op(), binary.rhs()) {
                 (l, BinaryOp::Mul, r) | (r, BinaryOp::Mul, l) if matches!(func_data.dfg().value(l).kind(), Integer(i) if i.value().count_ones() == 1) =>
                 {
                     let imm = risk!(func_data.dfg().value(l).kind(), Integer(i) => i.value());
-                    let mut rs = Reg::T0;
+                    let mut rs = T0;
                     insts.extend(load_value(context, func_data, r, &mut rs));
                     insts.add_inst(Inst::Slli(rd, rs, imm.trailing_zeros() as i32));
                 }
                 (l, BinaryOp::Sub, r) if matches!(func_data.dfg().value(r).kind(), Integer(i) if i.value() >= -2047 && i.value() <= 2048) =>
                 {
                     let imm = risk!(func_data.dfg().value(r).kind(), Integer(i) => i.value());
-                    let mut rs = Reg::T0;
+                    let mut rs = T0;
                     insts.extend(load_value(context, func_data, l, &mut rs));
                     insts.add_inst(Inst::Addi(rd, rs, -imm));
                 }
-                (l, BinaryOp::Shl, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) =>
-                {
+                (l, BinaryOp::Shl, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) => {
                     let imm = risk!(func_data.dfg().value(r).kind(), Integer(i) => i.value());
-                    let mut rs = Reg::T0;
+                    let mut rs = T0;
                     insts.extend(load_value(context, func_data, l, &mut rs));
                     insts.add_inst(Inst::Slli(rd, rs, imm & 31));
                 }
-                (l, BinaryOp::Shr, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) =>
-                {
+                (l, BinaryOp::Shr, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) => {
                     let imm = risk!(func_data.dfg().value(r).kind(), Integer(i) => i.value());
-                    let mut rs = Reg::T0;
+                    let mut rs = T0;
                     insts.extend(load_value(context, func_data, l, &mut rs));
                     insts.add_inst(Inst::Srai(rd, rs, imm & 31));
                 }
-                (l, BinaryOp::Sar, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) =>
-                {
+                (l, BinaryOp::Sar, r) if matches!(func_data.dfg().value(r).kind(), Integer(_)) => {
                     let imm = risk!(func_data.dfg().value(l).kind(), Integer(i) => i.value());
-                    let mut rs = Reg::T0;
+                    let mut rs = T0;
                     insts.extend(load_value(context, func_data, r, &mut rs));
                     insts.add_inst(Inst::Srli(rd, rs, imm & 31));
                 }
@@ -300,7 +311,7 @@ fn gen_value(
                         ) =>
                 {
                     let imm = risk!(func_data.dfg().value(l).kind(), Integer(i) => i.value());
-                    let mut rs = Reg::T0;
+                    let mut rs = T0;
                     insts.extend(load_value(context, func_data, r, &mut rs));
                     match op {
                         BinaryOp::NotEq => {
@@ -319,9 +330,9 @@ fn gen_value(
                     }
                 }
                 (l, op, r) => {
-                    let mut rs1 = Reg::T0;
+                    let mut rs1 = T0;
                     insts.extend(load_value(context, func_data, l, &mut rs1));
-                    let mut rs2 = Reg::T1;
+                    let mut rs2 = T1;
                     insts.extend(load_value(context, func_data, r, &mut rs2));
                     match op {
                         BinaryOp::NotEq => {
@@ -360,7 +371,7 @@ fn gen_value(
         }
         Branch(branch) => {
             let cond = branch.cond();
-            let mut rs = Reg::T0;
+            let mut rs = T0;
             insts.extend(load_value(context, func_data, cond, &mut rs));
             let true_label = context.labels.get(&branch.true_bb()).unwrap().clone();
             let false_label = context.labels.get(&branch.false_bb()).unwrap().clone();
@@ -382,36 +393,69 @@ fn gen_value(
             }
             if args.len() > 8 {
                 for (i, &arg) in args[8..].iter().enumerate() {
-                    let mut reg = Reg::T0;
+                    let mut reg = T0;
                     insts.extend(load_value(context, func_data, arg, &mut reg));
-                    insts.add_inst(Inst::Sw(reg, i as i32 * 4, Reg::Sp));
+                    let offset = i as i32 * 4;
+                    if offset <= 2047 {
+                        insts.add_inst(Inst::Sw(reg, offset, Sp));
+                    } else if context.frame_size - offset <= 2048 {
+                        insts.add_inst(Inst::Sw(reg, offset - context.frame_size, S0));
+                    } else {
+                        insts.add_inst(Inst::Li(T1, offset));
+                        insts.add_inst(Inst::Add(T1, Sp, T1));
+                        insts.add_inst(Inst::Sw(reg, 0, T1));
+                    }
+                }
+            }
+            if context.save_s0 {
+                let offset = if args.len() <= 8 { 0 } else { (args.len() - 8) * 4 } as i32;
+                if offset <= 2047 {
+                    insts.add_inst(Inst::Sw(S0, offset, Sp));
+                } else if context.frame_size - offset <= 2048 {
+                    insts.add_inst(Inst::Sw(S0, offset - context.frame_size, S0));
+                } else {
+                    insts.add_inst(Inst::Li(T1, offset));
+                    insts.add_inst(Inst::Add(T1, Sp, T1));
+                    insts.add_inst(Inst::Sw(S0, 0, T1));
                 }
             }
             insts.add_inst(Inst::Call(ir.func(func.callee()).name()[1..].to_string()));
             if value_type.is_i32() {
-                insts.extend(store_value(context, value, Reg::A0));
+                insts.extend(store_value(context, value, A0));
+            }
+            if context.save_s0 {
+                let offset = if args.len() <= 8 { 0 } else { (args.len() - 8) * 4 } as i32;
+                if offset <= 2047 {
+                    insts.add_inst(Inst::Lw(S0, offset, Sp));
+                } else if context.frame_size - offset <= 2048 {
+                    insts.add_inst(Inst::Lw(S0, offset - context.frame_size, S0));
+                } else {
+                    insts.add_inst(Inst::Li(T1, offset));
+                    insts.add_inst(Inst::Add(T1, Sp, T1));
+                    insts.add_inst(Inst::Lw(S0, 0, T1));
+                }
             }
         }
         Return(ret) => {
             if let Some(value) = ret.value() {
-                let mut rd = Reg::A0;
+                let mut rd = A0;
                 insts.extend(load_value(context, func_data, value, &mut rd));
-                if rd != Reg::A0 {
-                    insts.add_inst(Inst::Mv(Reg::A0, rd))
+                if rd != A0 {
+                    insts.add_inst(Inst::Mv(A0, rd))
                 }
             }
             if context.frame_size > 0 {
                 if context.frame_size <= 2047 {
-                    insts.add_inst(Inst::Addi(Reg::Sp, Reg::Sp, context.frame_size))
+                    insts.add_inst(Inst::Addi(Sp, Sp, context.frame_size))
                 } else {
-                    insts.add_inst(Inst::Li(Reg::T0, context.frame_size));
-                    insts.add_inst(Inst::Add(Reg::Sp, Reg::Sp, Reg::T0))
+                    insts.add_inst(Inst::Li(T0, context.frame_size));
+                    insts.add_inst(Inst::Add(Sp, Sp, T0))
                 }
             }
             if context.save_ra {
-                insts.add_inst(Inst::Lw(Reg::Ra, -4, Reg::Sp))
+                insts.add_inst(Inst::Lw(Ra, -4, Sp))
             }
-            insts.add_inst(Inst::Ret)
+            insts.add_inst(Inst::Jr(Ra))
         }
         _ => (),
     }
@@ -428,14 +472,15 @@ fn func(ir: &Program, func_data: &FunctionData, global_vars: &HashMap<Value, Str
     insts.add_directive(Directive::Global(name.to_string()));
     insts.add_label(name.to_string());
     if context.save_ra {
-        insts.add_inst(Inst::Sw(Reg::Ra, -4, Reg::Sp));
+        insts.add_inst(Inst::Sw(Ra, -4, Sp));
     }
     if context.frame_size > 0 {
-        if context.frame_size <= 2048 {
-            insts.add_inst(Inst::Addi(Reg::Sp, Reg::Sp, -context.frame_size));
+        if !context.save_s0 {
+            insts.add_inst(Inst::Addi(Sp, Sp, -context.frame_size));
         } else {
-            insts.add_inst(Inst::Li(Reg::T0, context.frame_size));
-            insts.add_inst(Inst::Sub(Reg::Sp, Reg::Sp, Reg::T0));
+            insts.add_inst(Inst::Mv(S0, Sp));
+            insts.add_inst(Inst::Li(T0, context.frame_size));
+            insts.add_inst(Inst::Sub(Sp, Sp, T0));
         }
     }
     for (bb, node) in func_data.layout().bbs() {
