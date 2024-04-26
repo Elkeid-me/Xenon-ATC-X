@@ -95,6 +95,10 @@ fn post_process(rv: RiscV) -> RiscV {
         .iter()
         .filter_map(|i| match i {
             Label(label) => Some((label, index)),
+            Inst(Call(_)) => {
+                index += 8;
+                None
+            }
             Inst(_) => {
                 index += 4;
                 None

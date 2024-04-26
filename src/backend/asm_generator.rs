@@ -95,13 +95,13 @@ fn store_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
         } else if s0_offset >= -2048 && s0_offset <= 2047 {
             vec![RiscVItem::Inst(Inst::Sw(reg, s0_offset, S0))]
         } else if offset >= -4096 && offset < -2048 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)), RiscVItem::Inst(Inst::Sw(reg, offset + 2048, Sp))]
+            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)), RiscVItem::Inst(Inst::Sw(reg, offset + 2048, T3))]
         } else if offset > 2047 && offset <= 4094 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)), RiscVItem::Inst(Inst::Sw(reg, offset - 2047, Sp))]
+            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)), RiscVItem::Inst(Inst::Sw(reg, offset - 2047, T3))]
         } else if s0_offset >= -4096 && s0_offset < -2048 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, S0, -2048)), RiscVItem::Inst(Inst::Sw(reg, s0_offset + 2048, S0))]
+            vec![RiscVItem::Inst(Inst::Addi(T3, S0, -2048)), RiscVItem::Inst(Inst::Sw(reg, s0_offset + 2048, T3))]
         } else if s0_offset > 2047 && s0_offset <= 4094 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, S0, 2047)), RiscVItem::Inst(Inst::Sw(reg, s0_offset - 2047, S0))]
+            vec![RiscVItem::Inst(Inst::Addi(T3, S0, 2047)), RiscVItem::Inst(Inst::Sw(reg, s0_offset - 2047, T3))]
         } else {
             vec![
                 RiscVItem::Inst(Inst::Li(T3, offset)),
@@ -130,13 +130,13 @@ fn load_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
         } else if s0_offset >= -2048 && s0_offset <= 2047 {
             vec![RiscVItem::Inst(Inst::Lw(reg, s0_offset, S0))]
         } else if offset >= -4096 && offset < -2048 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)), RiscVItem::Inst(Inst::Lw(reg, offset + 2048, Sp))]
+            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)), RiscVItem::Inst(Inst::Lw(reg, offset + 2048, T3))]
         } else if offset > 2047 && offset <= 4094 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)), RiscVItem::Inst(Inst::Lw(reg, offset - 2047, Sp))]
+            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)), RiscVItem::Inst(Inst::Lw(reg, offset - 2047, T3))]
         } else if s0_offset >= -4096 && s0_offset < -2048 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, S0, -2048)), RiscVItem::Inst(Inst::Lw(reg, s0_offset + 2048, S0))]
+            vec![RiscVItem::Inst(Inst::Addi(T3, S0, -2048)), RiscVItem::Inst(Inst::Lw(reg, s0_offset + 2048, T3))]
         } else if s0_offset > 2047 && s0_offset <= 4094 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, S0, 2047)), RiscVItem::Inst(Inst::Lw(reg, s0_offset - 2047, S0))]
+            vec![RiscVItem::Inst(Inst::Addi(T3, S0, 2047)), RiscVItem::Inst(Inst::Lw(reg, s0_offset - 2047, T3))]
         } else {
             vec![
                 RiscVItem::Inst(Inst::Li(T3, offset)),
