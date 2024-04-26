@@ -77,45 +77,89 @@ fn load_value(context: &Context, func_data: &FunctionData, value: Value, reg: &m
             } else {
                 // 第 9 个参数的 index 为 8，而第 9 个参数的 offset 为 0.
                 let offset = (index - 8) as i32 * 4 + context.frame_size;
-                if offset <= 2047 {
-                    vec![RiscVItem::Inst(Inst::Lw(*reg, offset, Sp))]
-                } else if context.save_s0 && (index - 8) as i32 * 4 <= 2047 {
-                    vec![RiscVItem::Inst(Inst::Lw(*reg, offset, S0))]
-                } else {
-                    vec![
-                        RiscVItem::Inst(Inst::Li(*reg, offset)),
-                        RiscVItem::Inst(Inst::Add(*reg, Sp, *reg)),
-                        RiscVItem::Inst(Inst::Lw(*reg, 0, *reg)),
-                    ]
-                }
+                load_value_offset(context, offset, *reg)
             }
         }
         _ => {
             let offset = *context.vars.get(&value).unwrap();
-            if offset <= 2047 {
-                vec![RiscVItem::Inst(Inst::Lw(*reg, offset, Sp))]
-            } else if context.frame_size - offset <= 2048 {
-                vec![RiscVItem::Inst(Inst::Lw(*reg, offset - context.frame_size, S0))]
-            } else {
-                vec![
-                    RiscVItem::Inst(Inst::Li(*reg, offset)),
-                    RiscVItem::Inst(Inst::Add(*reg, Sp, *reg)),
-                    RiscVItem::Inst(Inst::Lw(*reg, 0, *reg)),
-                ]
-            }
+            load_value_offset(context, offset, *reg)
+        }
+    }
+}
+
+fn store_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
+    if context.save_s0 {
+        let s0_offset = offset - context.frame_size;
+        if offset >= -2048 && offset <= 2047 {
+            vec![RiscVItem::Inst(Inst::Sw(reg, offset, Sp))]
+        } else if s0_offset >= -2048 && s0_offset <= 2047 {
+            vec![RiscVItem::Inst(Inst::Sw(reg, s0_offset, S0))]
+        } else if offset >= -4096 && offset < -2048 {
+            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)), RiscVItem::Inst(Inst::Sw(reg, offset + 2048, Sp))]
+        } else if offset > 2047 && offset <= 4094 {
+            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)), RiscVItem::Inst(Inst::Sw(reg, offset - 2047, Sp))]
+        } else if s0_offset >= -4096 && s0_offset < -2048 {
+            vec![RiscVItem::Inst(Inst::Addi(T3, S0, -2048)), RiscVItem::Inst(Inst::Sw(reg, s0_offset + 2048, S0))]
+        } else if s0_offset > 2047 && s0_offset <= 4094 {
+            vec![RiscVItem::Inst(Inst::Addi(T3, S0, 2047)), RiscVItem::Inst(Inst::Sw(reg, s0_offset - 2047, S0))]
+        } else {
+            vec![
+                RiscVItem::Inst(Inst::Li(T3, offset)),
+                RiscVItem::Inst(Inst::Add(T3, Sp, T3)),
+                RiscVItem::Inst(Inst::Sw(reg, 0, T3)),
+            ]
+        }
+    } else {
+        if offset >= -2048 && offset <= 2047 {
+            vec![RiscVItem::Inst(Inst::Sw(reg, offset, Sp))]
+        } else {
+            vec![
+                RiscVItem::Inst(Inst::Li(T3, offset)),
+                RiscVItem::Inst(Inst::Add(T3, Sp, T3)),
+                RiscVItem::Inst(Inst::Sw(reg, 0, T3)),
+            ]
+        }
+    }
+}
+
+fn load_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
+    if context.save_s0 {
+        let s0_offset = offset - context.frame_size;
+        if offset >= -2048 && offset <= 2047 {
+            vec![RiscVItem::Inst(Inst::Lw(reg, offset, Sp))]
+        } else if s0_offset >= -2048 && s0_offset <= 2047 {
+            vec![RiscVItem::Inst(Inst::Lw(reg, s0_offset, S0))]
+        } else if offset >= -4096 && offset < -2048 {
+            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)), RiscVItem::Inst(Inst::Lw(reg, offset + 2048, Sp))]
+        } else if offset > 2047 && offset <= 4094 {
+            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)), RiscVItem::Inst(Inst::Lw(reg, offset - 2047, Sp))]
+        } else if s0_offset >= -4096 && s0_offset < -2048 {
+            vec![RiscVItem::Inst(Inst::Addi(T3, S0, -2048)), RiscVItem::Inst(Inst::Lw(reg, s0_offset + 2048, S0))]
+        } else if s0_offset > 2047 && s0_offset <= 4094 {
+            vec![RiscVItem::Inst(Inst::Addi(T3, S0, 2047)), RiscVItem::Inst(Inst::Lw(reg, s0_offset - 2047, S0))]
+        } else {
+            vec![
+                RiscVItem::Inst(Inst::Li(T3, offset)),
+                RiscVItem::Inst(Inst::Add(T3, Sp, T3)),
+                RiscVItem::Inst(Inst::Lw(reg, 0, T3)),
+            ]
+        }
+    } else {
+        if offset >= -2048 && offset <= 2047 {
+            vec![RiscVItem::Inst(Inst::Lw(reg, offset, Sp))]
+        } else {
+            vec![
+                RiscVItem::Inst(Inst::Li(T3, offset)),
+                RiscVItem::Inst(Inst::Add(T3, Sp, T3)),
+                RiscVItem::Inst(Inst::Lw(reg, 0, T3)),
+            ]
         }
     }
 }
 
 fn store_value(context: &Context, value: Value, reg: Reg) -> RiscV {
     let offset = *context.vars.get(&value).unwrap();
-    if offset <= 2047 {
-        vec![RiscVItem::Inst(Inst::Sw(reg, offset, Sp))]
-    } else if context.frame_size - offset <= 2048 {
-        vec![RiscVItem::Inst(Inst::Sw(reg, offset - context.frame_size, S0))]
-    } else {
-        vec![RiscVItem::Inst(Inst::Li(T3, offset)), RiscVItem::Inst(Inst::Add(T3, Sp, T3)), RiscVItem::Inst(Inst::Sw(reg, 0, T3))]
-    }
+    store_value_offset(context, offset, reg)
 }
 
 fn get_ptr(
@@ -175,41 +219,17 @@ fn gen_value(
                 match func_data.dfg().value(src).kind() {
                     Alloc(_) => {
                         let offset = *context.vars.get(&src).unwrap();
-                        if offset <= 2047 {
-                            insts.add_inst(Inst::Lw(T0, offset, Sp));
-                        } else if context.frame_size - offset <= 2048 {
-                            insts.add_inst(Inst::Lw(T0, offset - context.frame_size, S0));
-                        } else {
-                            insts.add_inst(Inst::Li(T0, offset));
-                            insts.add_inst(Inst::Add(T0, Sp, T0));
-                            insts.add_inst(Inst::Lw(T0, 0, T0));
-                        }
+                        insts.extend(load_value_offset(context, offset, T0));
                     }
                     _ => {
                         let offset = *context.vars.get(&src).unwrap();
-                        if offset <= 2047 {
-                            insts.add_inst(Inst::Lw(T0, offset, Sp));
-                            insts.add_inst(Inst::Lw(T0, 0, T0));
-                        } else if context.frame_size - offset <= 2048 {
-                            insts.add_inst(Inst::Lw(T0, offset - context.frame_size, S0));
-                            insts.add_inst(Inst::Lw(T0, 0, T0));
-                        } else {
-                            insts.add_inst(Inst::Li(T0, offset));
-                            insts.add_inst(Inst::Add(T0, Sp, T0));
-                            insts.add_inst(Inst::Lw(T0, 0, T0));
-                            insts.add_inst(Inst::Lw(T0, 0, T0));
-                        }
+                        insts.extend(load_value_offset(context, offset, T0));
+                        insts.add_inst(Inst::Lw(T0, 0, T0));
                     }
                 }
             }
             let offset = *context.vars.get(&value).unwrap();
-            if offset <= 2047 {
-                insts.add_inst(Inst::Sw(T0, offset, Sp));
-            } else {
-                insts.add_inst(Inst::Li(T1, offset));
-                insts.add_inst(Inst::Add(T1, Sp, T1));
-                insts.add_inst(Inst::Sw(T0, 0, T1));
-            }
+            insts.extend(store_value_offset(context, offset, T0));
         }
         Store(store) => {
             let src = store.value();
@@ -224,30 +244,12 @@ fn gen_value(
                 match func_data.dfg().value(dst).kind() {
                     Alloc(_) => {
                         let offset = *context.vars.get(&dst).unwrap();
-                        if offset <= 2047 {
-                            insts.add_inst(Inst::Sw(src_reg, offset, Sp));
-                        } else if context.frame_size - offset <= 2048 {
-                            insts.add_inst(Inst::Sw(src_reg, offset - context.frame_size, S0));
-                        } else {
-                            insts.add_inst(Inst::Li(T1, offset));
-                            insts.add_inst(Inst::Add(T1, Sp, T1));
-                            insts.add_inst(Inst::Sw(src_reg, 0, T1));
-                        }
+                        insts.extend(store_value_offset(context, offset, src_reg));
                     }
                     _ => {
                         let offset = *context.vars.get(&dst).unwrap();
-                        if offset <= 2047 {
-                            insts.add_inst(Inst::Lw(T1, offset, Sp));
-                            insts.add_inst(Inst::Sw(src_reg, 0, T1));
-                        } else if context.frame_size - offset <= 2048 {
-                            insts.add_inst(Inst::Lw(T1, offset - context.frame_size, S0));
-                            insts.add_inst(Inst::Sw(src_reg, 0, T1));
-                        } else {
-                            insts.add_inst(Inst::Li(T1, offset));
-                            insts.add_inst(Inst::Add(T1, Sp, T1));
-                            insts.add_inst(Inst::Lw(T1, 0, T1));
-                            insts.add_inst(Inst::Sw(src_reg, 0, T1));
-                        }
+                        insts.extend(load_value_offset(context, offset, T1));
+                        insts.add_inst(Inst::Sw(src_reg, 0, T1));
                     }
                 }
             }
@@ -396,28 +398,12 @@ fn gen_value(
                     let mut reg = T0;
                     insts.extend(load_value(context, func_data, arg, &mut reg));
                     let offset = i as i32 * 4;
-                    if offset <= 2047 {
-                        insts.add_inst(Inst::Sw(reg, offset, Sp));
-                    } else if context.frame_size - offset <= 2048 {
-                        insts.add_inst(Inst::Sw(reg, offset - context.frame_size, S0));
-                    } else {
-                        insts.add_inst(Inst::Li(T1, offset));
-                        insts.add_inst(Inst::Add(T1, Sp, T1));
-                        insts.add_inst(Inst::Sw(reg, 0, T1));
-                    }
+                    insts.extend(store_value_offset(context, offset, T0));
                 }
             }
             if context.save_s0 {
                 let offset = if args.len() <= 8 { 0 } else { (args.len() - 8) * 4 } as i32;
-                if offset <= 2047 {
-                    insts.add_inst(Inst::Sw(S0, offset, Sp));
-                } else if context.frame_size - offset <= 2048 {
-                    insts.add_inst(Inst::Sw(S0, offset - context.frame_size, S0));
-                } else {
-                    insts.add_inst(Inst::Li(T1, offset));
-                    insts.add_inst(Inst::Add(T1, Sp, T1));
-                    insts.add_inst(Inst::Sw(S0, 0, T1));
-                }
+                insts.extend(store_value_offset(context, offset, S0));
             }
             insts.add_inst(Inst::Call(ir.func(func.callee()).name()[1..].to_string()));
             if value_type.is_i32() {
@@ -427,8 +413,6 @@ fn gen_value(
                 let offset = if args.len() <= 8 { 0 } else { (args.len() - 8) * 4 } as i32;
                 if offset <= 2047 {
                     insts.add_inst(Inst::Lw(S0, offset, Sp));
-                } else if context.frame_size - offset <= 2048 {
-                    insts.add_inst(Inst::Lw(S0, offset - context.frame_size, S0));
                 } else {
                     insts.add_inst(Inst::Li(T1, offset));
                     insts.add_inst(Inst::Add(T1, Sp, T1));

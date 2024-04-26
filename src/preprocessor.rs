@@ -2,10 +2,7 @@ use generator::{done, Gn};
 
 pub fn preprocess(code: String) -> String {
     let remove_cr = Gn::new_scoped(move |mut s| {
-        enum RmCrState {
-            Normal,
-            Cr,
-        }
+        enum RmCrState { Normal, Cr, }
         use RmCrState::*;
         let mut state = Normal;
         for c in code.chars() {
@@ -28,10 +25,7 @@ pub fn preprocess(code: String) -> String {
         done!();
     });
     let phy_line_to_logical_line = Gn::new_scoped(move |mut s| {
-        enum P2LState {
-            Normal,
-            Backslash,
-        }
+        enum P2LState { Normal, Backslash, }
         use P2LState::*;
         let mut state = Normal;
         for c in remove_cr {
