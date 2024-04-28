@@ -143,7 +143,7 @@ impl Generator {
             ),
             (true, false) => (
                 format!(
-                    r"{expr_eval}\n
+                    r"{expr_eval}
     {tmp_id_1} = load {expr_id}
     {tmp_id_2} = {op} {expr_id}, 1
     store {tmp_id_2}, {expr_id}
