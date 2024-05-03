@@ -62,7 +62,9 @@ Xenon 已被废弃，Xenon ATC-X 是其后继项目。ATC-X = **A**dvanced **T**
 
 ## 构建
 
-构建编译器需要 Rust 工具链。构建文档需要 LuaLaTeX。
+构建编译器需要 Rust 工具链。构建文档需要 LuaLaTeX。注意，鉴于 ctexart 文档类与 fontspec 2.9b 版本不兼容，在 ctex 更新前，将暂时使用 article 文档类。
+
+> 关于 ctexart 的具体问题，[见这里](https://elkeid-me.github.io/2024/05/02/a-latex-error/)
 
 ### Windows
 

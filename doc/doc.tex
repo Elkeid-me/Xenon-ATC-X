@@ -1,9 +1,13 @@
+% \PassOptionsToPackage{no-math}{fontspec}
+% \ExplSyntaxOn
+%     \cs_if_exist:NTF \DefaultFonts
+%       { \documentclass[a4paper]{ctexart} }
+%       { \documentclass[a4paper,fontset=none]{ctexart} }
+% \ExplSyntaxOff
 \PassOptionsToPackage{no-math}{fontspec}
-\ExplSyntaxOn
-    \cs_if_exist:NTF \DefaultFonts
-      { \documentclass[a4paper]{ctexart} }
-      { \documentclass[a4paper,fontset=none]{ctexart} }
-\ExplSyntaxOff
+\documentclass[a4paper]{article}
+\usepackage[no-math]{fontspec}
+\usepackage{ctex}
 \usepackage{graphicx,siunitx,subcaption,amssymb,amsmath,fixdif,tabularray,minted}
 \sisetup{mode=text,per-mode=symbol}
 \RenewDocumentCommand{\theFancyVerbLine}{}{\ttfamily{\arabic{FancyVerbLine}}}
