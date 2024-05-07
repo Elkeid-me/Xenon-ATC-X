@@ -114,7 +114,7 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(J(label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 2047 && offset >= -2048 {
+                if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
                 } else {
                     v_2.push(Inst(La(T4, label.clone())));
@@ -124,7 +124,7 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(Beqz(reg, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 2047 && offset >= -2048 {
+                if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
                 } else {
                     v_2.push(Inst(Bnez(*reg, format!("_T_{label}"))));
@@ -136,7 +136,7 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(Bnez(reg, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 2047 && offset >= -2048 {
+                if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
                 } else {
                     v_2.push(Inst(Beqz(*reg, format!("_T_{label}"))));
