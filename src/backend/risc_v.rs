@@ -3,8 +3,12 @@ use std::fmt::{Display, Formatter, Result};
 
 #[derive(Clone)]
 pub enum Inst {
-    Beqz(Reg, String),
-    Bnez(Reg, String),
+    Beq(Reg, Reg, String),
+    Bne(Reg, Reg, String),
+    Blt(Reg, Reg, String),
+    Bgt(Reg, Reg, String),
+    Ble(Reg, Reg, String),
+    Bge(Reg, Reg, String),
     J(String),
     Call(String),
     Jr(Reg),
@@ -156,8 +160,12 @@ impl RiscVTrait for RiscV {
 impl Display for Inst {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            Self::Beqz(rs, label) => write!(f, "beqz {rs}, {label}"),
-            Self::Bnez(rs, label) => write!(f, "bnez {rs}, {label}"),
+            Self::Beq(rs_1, rs_2, label) => write!(f, "beq {rs_1}, {rs_2}, {label}"),
+            Self::Bne(rs_1, rs_2, label) => write!(f, "bne {rs_1}, {rs_2}, {label}"),
+            Self::Blt(rs_1, rs_2, label) => write!(f, "blt {rs_1}, {rs_2}, {label}"),
+            Self::Bgt(rs_1, rs_2, label) => write!(f, "bgt {rs_1}, {rs_2}, {label}"),
+            Self::Ble(rs_1, rs_2, label) => write!(f, "ble {rs_1}, {rs_2}, {label}"),
+            Self::Bge(rs_1, rs_2, label) => write!(f, "bge {rs_1}, {rs_2}, {label}"),
             Self::J(label) => write!(f, "j {label}"),
             Self::Call(label) => write!(f, "call {label}"),
 

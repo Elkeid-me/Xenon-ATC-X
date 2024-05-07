@@ -14,10 +14,43 @@ impl Generator {
                 let label = self.counter.get();
                 format!("{}{label}:\n{}", self.cond_expr(*l, then_label, &label), self.cond_expr(*r, then_label, else_label))
             }
-            Eq(expr, num) | Eq(num, expr) if matches!(*num, Num(0)) => self.cond_expr(*expr, else_label, then_label),
-            Neq(expr, num) | Neq(expr, num) if matches!(*num, Num(0)) => self.cond_expr(*expr, then_label, else_label),
 
-            LogicNot(expr) => self.cond_expr(*expr, else_label, then_label),
+            Eq(l, r) => {
+                let (l_eval, l_id) = self.expr_rvalue(*l);
+                let (r_eval, r_id) = self.expr_rvalue(*r);
+                let cond_id = format!("{}_br", self.counter.get());
+                format!("{l_eval}{r_eval}    {cond_id} = eq {l_id}, {r_id}\n    br {cond_id}, {then_label}, {else_label}\n")
+            }
+            Neq(l, r) => {
+                let (l_eval, l_id) = self.expr_rvalue(*l);
+                let (r_eval, r_id) = self.expr_rvalue(*r);
+                let cond_id = format!("{}_br", self.counter.get());
+                format!("{l_eval}{r_eval}    {cond_id} = ne {l_id}, {r_id}\n    br {cond_id}, {then_label}, {else_label}\n")
+            }
+            Grt(l, r) => {
+                let (l_eval, l_id) = self.expr_rvalue(*l);
+                let (r_eval, r_id) = self.expr_rvalue(*r);
+                let cond_id = format!("{}_br", self.counter.get());
+                format!("{l_eval}{r_eval}    {cond_id} = gt {l_id}, {r_id}\n    br {cond_id}, {then_label}, {else_label}\n")
+            }
+            Les(l, r) => {
+                let (l_eval, l_id) = self.expr_rvalue(*l);
+                let (r_eval, r_id) = self.expr_rvalue(*r);
+                let cond_id = format!("{}_br", self.counter.get());
+                format!("{l_eval}{r_eval}    {cond_id} = lt {l_id}, {r_id}\n    br {cond_id}, {then_label}, {else_label}\n")
+            }
+            Geq(l, r) => {
+                let (l_eval, l_id) = self.expr_rvalue(*l);
+                let (r_eval, r_id) = self.expr_rvalue(*r);
+                let cond_id = format!("{}_br", self.counter.get());
+                format!("{l_eval}{r_eval}    {cond_id} = ge {l_id}, {r_id}\n    br {cond_id}, {then_label}, {else_label}\n")
+            }
+            Leq(l, r) => {
+                let (l_eval, l_id) = self.expr_rvalue(*l);
+                let (r_eval, r_id) = self.expr_rvalue(*r);
+                let cond_id = format!("{}_br", self.counter.get());
+                format!("{l_eval}{r_eval}    {cond_id} = le {l_id}, {r_id}\n    br {cond_id}, {then_label}, {else_label}\n")
+            }
 
             _ => {
                 let (cond_eval, cond_id) = self.expr_rvalue(cond);

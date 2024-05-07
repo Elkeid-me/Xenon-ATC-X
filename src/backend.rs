@@ -11,36 +11,192 @@ fn post_process(rv: RiscV) -> RiscV {
         let mut iter = rv.into_iter();
         loop {
             match iter.next() {
-                Some(Inst(Bnez(reg, label_1))) => match iter.next() {
+                Some(Inst(Bne(rs_1, rs_2, label_1))) => match iter.next() {
                     Some(Inst(J(label_2))) => match iter.next() {
                         Some(Label(label_3)) if label_2 == label_3 => {
-                            s.yield_(Inst(Bnez(reg, label_1)));
+                            s.yield_(Inst(Bne(rs_1, rs_2, label_1)));
                             s.yield_(Label(label_3));
                         }
                         Some(Label(label_3)) if label_1 == label_3 => {
-                            s.yield_(Inst(Beqz(reg, label_2)));
+                            s.yield_(Inst(Beq(rs_1, rs_2, label_2)));
                             s.yield_(Label(label_3));
                         }
                         Some(i) => {
-                            s.yield_(Inst(Bnez(reg, label_1)));
+                            s.yield_(Inst(Bne(rs_1, rs_2, label_1)));
                             s.yield_(Inst(J(label_2)));
                             s.yield_(i);
                         }
                         None => {
-                            s.yield_(Inst(Bnez(reg, label_1)));
+                            s.yield_(Inst(Bne(rs_1, rs_2, label_1)));
                             s.yield_(Inst(J(label_2)));
                             break;
                         }
                     },
                     Some(i) => {
-                        s.yield_(Inst(Beqz(reg, label_1)));
+                        s.yield_(Inst(Bne(rs_1, rs_2, label_1)));
                         s.yield_(i);
                     }
                     None => {
-                        s.yield_(Inst(Beqz(reg, label_1)));
+                        s.yield_(Inst(Bne(rs_1, rs_2, label_1)));
                         break;
                     }
                 },
+
+                Some(Inst(Beq(rs_1, rs_2, label_1))) => match iter.next() {
+                    Some(Inst(J(label_2))) => match iter.next() {
+                        Some(Label(label_3)) if label_2 == label_3 => {
+                            s.yield_(Inst(Beq(rs_1, rs_2, label_1)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(Label(label_3)) if label_1 == label_3 => {
+                            s.yield_(Inst(Bne(rs_1, rs_2, label_2)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(i) => {
+                            s.yield_(Inst(Beq(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            s.yield_(i);
+                        }
+                        None => {
+                            s.yield_(Inst(Beq(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            break;
+                        }
+                    },
+                    Some(i) => {
+                        s.yield_(Inst(Beq(rs_1, rs_2, label_1)));
+                        s.yield_(i);
+                    }
+                    None => {
+                        s.yield_(Inst(Beq(rs_1, rs_2, label_1)));
+                        break;
+                    }
+                },
+
+                Some(Inst(Blt(rs_1, rs_2, label_1))) => match iter.next() {
+                    Some(Inst(J(label_2))) => match iter.next() {
+                        Some(Label(label_3)) if label_2 == label_3 => {
+                            s.yield_(Inst(Blt(rs_1, rs_2, label_1)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(Label(label_3)) if label_1 == label_3 => {
+                            s.yield_(Inst(Bge(rs_1, rs_2, label_2)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(i) => {
+                            s.yield_(Inst(Blt(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            s.yield_(i);
+                        }
+                        None => {
+                            s.yield_(Inst(Blt(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            break;
+                        }
+                    },
+                    Some(i) => {
+                        s.yield_(Inst(Blt(rs_1, rs_2, label_1)));
+                        s.yield_(i);
+                    }
+                    None => {
+                        s.yield_(Inst(Blt(rs_1, rs_2, label_1)));
+                        break;
+                    }
+                },
+
+                Some(Inst(Bgt(rs_1, rs_2, label_1))) => match iter.next() {
+                    Some(Inst(J(label_2))) => match iter.next() {
+                        Some(Label(label_3)) if label_2 == label_3 => {
+                            s.yield_(Inst(Bgt(rs_1, rs_2, label_1)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(Label(label_3)) if label_1 == label_3 => {
+                            s.yield_(Inst(Ble(rs_1, rs_2, label_2)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(i) => {
+                            s.yield_(Inst(Bgt(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            s.yield_(i);
+                        }
+                        None => {
+                            s.yield_(Inst(Bgt(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            break;
+                        }
+                    },
+                    Some(i) => {
+                        s.yield_(Inst(Bgt(rs_1, rs_2, label_1)));
+                        s.yield_(i);
+                    }
+                    None => {
+                        s.yield_(Inst(Bgt(rs_1, rs_2, label_1)));
+                        break;
+                    }
+                },
+
+                Some(Inst(Bge(rs_1, rs_2, label_1))) => match iter.next() {
+                    Some(Inst(J(label_2))) => match iter.next() {
+                        Some(Label(label_3)) if label_2 == label_3 => {
+                            s.yield_(Inst(Bge(rs_1, rs_2, label_1)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(Label(label_3)) if label_1 == label_3 => {
+                            s.yield_(Inst(Blt(rs_1, rs_2, label_2)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(i) => {
+                            s.yield_(Inst(Bge(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            s.yield_(i);
+                        }
+                        None => {
+                            s.yield_(Inst(Bge(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            break;
+                        }
+                    },
+                    Some(i) => {
+                        s.yield_(Inst(Bge(rs_1, rs_2, label_1)));
+                        s.yield_(i);
+                    }
+                    None => {
+                        s.yield_(Inst(Bge(rs_1, rs_2, label_1)));
+                        break;
+                    }
+                },
+
+                Some(Inst(Ble(rs_1, rs_2, label_1))) => match iter.next() {
+                    Some(Inst(J(label_2))) => match iter.next() {
+                        Some(Label(label_3)) if label_2 == label_3 => {
+                            s.yield_(Inst(Ble(rs_1, rs_2, label_1)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(Label(label_3)) if label_1 == label_3 => {
+                            s.yield_(Inst(Bgt(rs_1, rs_2, label_2)));
+                            s.yield_(Label(label_3));
+                        }
+                        Some(i) => {
+                            s.yield_(Inst(Ble(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            s.yield_(i);
+                        }
+                        None => {
+                            s.yield_(Inst(Ble(rs_1, rs_2, label_1)));
+                            s.yield_(Inst(J(label_2)));
+                            break;
+                        }
+                    },
+                    Some(i) => {
+                        s.yield_(Inst(Ble(rs_1, rs_2, label_1)));
+                        s.yield_(i);
+                    }
+                    None => {
+                        s.yield_(Inst(Ble(rs_1, rs_2, label_1)));
+                        break;
+                    }
+                },
+
                 Some(Inst(J(label_1))) => match iter.next() {
                     Some(Label(label_2)) if label_1 == label_2 => {
                         s.yield_(Label(label_2));
@@ -121,25 +277,73 @@ fn post_process(rv: RiscV) -> RiscV {
                     v_2.push(Inst(Jr(T4)));
                 }
             }
-            Inst(Beqz(reg, label)) => {
+            Inst(Beq(rs_1, rs_2, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
                 if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
                 } else {
-                    v_2.push(Inst(Bnez(*reg, format!("_T_{label}"))));
+                    v_2.push(Inst(Bne(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
                     v_2.push(Label(format!("_T_{label}")));
                 }
             }
-            Inst(Bnez(reg, label)) => {
+            Inst(Bne(rs_1, rs_2, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
                 if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
                 } else {
-                    v_2.push(Inst(Beqz(*reg, format!("_T_{label}"))));
+                    v_2.push(Inst(Beq(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(La(T4, label.clone())));
+                    v_2.push(Inst(Jr(T4)));
+                    v_2.push(Label(format!("_T_{label}")));
+                }
+            }
+            Inst(Blt(rs_1, rs_2, label)) => {
+                index_2 += 4;
+                let offset = labels.get(label).unwrap() - index_2;
+                if offset <= 4094 && offset >= -4096 {
+                    v_2.push(i.clone());
+                } else {
+                    v_2.push(Inst(Bge(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(La(T4, label.clone())));
+                    v_2.push(Inst(Jr(T4)));
+                    v_2.push(Label(format!("_T_{label}")));
+                }
+            }
+            Inst(Bgt(rs_1, rs_2, label)) => {
+                index_2 += 4;
+                let offset = labels.get(label).unwrap() - index_2;
+                if offset <= 4094 && offset >= -4096 {
+                    v_2.push(i.clone());
+                } else {
+                    v_2.push(Inst(Ble(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(La(T4, label.clone())));
+                    v_2.push(Inst(Jr(T4)));
+                    v_2.push(Label(format!("_T_{label}")));
+                }
+            }
+            Inst(Ble(rs_1, rs_2, label)) => {
+                index_2 += 4;
+                let offset = labels.get(label).unwrap() - index_2;
+                if offset <= 4094 && offset >= -4096 {
+                    v_2.push(i.clone());
+                } else {
+                    v_2.push(Inst(Bgt(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(La(T4, label.clone())));
+                    v_2.push(Inst(Jr(T4)));
+                    v_2.push(Label(format!("_T_{label}")));
+                }
+            }
+            Inst(Bge(rs_1, rs_2, label)) => {
+                index_2 += 4;
+                let offset = labels.get(label).unwrap() - index_2;
+                if offset <= 4094 && offset >= -4096 {
+                    v_2.push(i.clone());
+                } else {
+                    v_2.push(Inst(Blt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
                     v_2.push(Label(format!("_T_{label}")));
