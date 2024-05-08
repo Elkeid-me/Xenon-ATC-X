@@ -270,7 +270,7 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(J(label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 4094 && offset >= -4096 {
+                if offset <= 1048574 && offset >= -1048576 {
                     v_2.push(i.clone());
                 } else {
                     v_2.push(Inst(La(T4, label.clone())));
@@ -282,6 +282,10 @@ fn post_process(rv: RiscV) -> RiscV {
                 let offset = labels.get(label).unwrap() - index_2;
                 if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
+                } else if offset <= 1048574 && offset >= -1048576 {
+                    v_2.push(Inst(Bne(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(J(label.clone())));
+                    v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Bne(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
@@ -294,6 +298,10 @@ fn post_process(rv: RiscV) -> RiscV {
                 let offset = labels.get(label).unwrap() - index_2;
                 if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
+                } else if offset <= 1048574 && offset >= -1048576 {
+                    v_2.push(Inst(Beq(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(J(label.clone())));
+                    v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Beq(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
@@ -306,6 +314,10 @@ fn post_process(rv: RiscV) -> RiscV {
                 let offset = labels.get(label).unwrap() - index_2;
                 if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
+                } else if offset <= 1048574 && offset >= -1048576 {
+                    v_2.push(Inst(Bge(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(J(label.clone())));
+                    v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Bge(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
@@ -318,6 +330,10 @@ fn post_process(rv: RiscV) -> RiscV {
                 let offset = labels.get(label).unwrap() - index_2;
                 if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
+                } else if offset <= 1048574 && offset >= -1048576 {
+                    v_2.push(Inst(Ble(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(J(label.clone())));
+                    v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Ble(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
@@ -330,6 +346,10 @@ fn post_process(rv: RiscV) -> RiscV {
                 let offset = labels.get(label).unwrap() - index_2;
                 if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
+                } else if offset <= 1048574 && offset >= -1048576 {
+                    v_2.push(Inst(Bgt(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(J(label.clone())));
+                    v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Bgt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
@@ -342,6 +362,10 @@ fn post_process(rv: RiscV) -> RiscV {
                 let offset = labels.get(label).unwrap() - index_2;
                 if offset <= 4094 && offset >= -4096 {
                     v_2.push(i.clone());
+                } else if offset <= 1048574 && offset >= -1048576 {
+                    v_2.push(Inst(Blt(*rs_1, *rs_2, format!("_T_{label}"))));
+                    v_2.push(Inst(J(label.clone())));
+                    v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Blt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
