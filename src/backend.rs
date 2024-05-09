@@ -251,7 +251,7 @@ fn post_process(rv: RiscV) -> RiscV {
         .iter()
         .filter_map(|i| match i {
             Label(label) => Some((label, index)),
-            Inst(Call(_)) => {
+            Inst(Call(_)) | Inst(Li(_, _)) | Inst(La(_, _)) => {
                 index += 8;
                 None
             }
@@ -275,6 +275,7 @@ fn post_process(rv: RiscV) -> RiscV {
                 } else {
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
+                    index_2 += 4;
                 }
             }
             Inst(Beq(rs_1, rs_2, label)) => {
@@ -285,11 +286,13 @@ fn post_process(rv: RiscV) -> RiscV {
                 } else if offset <= 1048574 && offset >= -1048576 {
                     v_2.push(Inst(Bne(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
+                    index_2 += 4;
                     v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Bne(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
+                    index_2 += 8;
                     v_2.push(Label(format!("_T_{label}")));
                 }
             }
@@ -301,11 +304,13 @@ fn post_process(rv: RiscV) -> RiscV {
                 } else if offset <= 1048574 && offset >= -1048576 {
                     v_2.push(Inst(Beq(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
+                    index_2 += 4;
                     v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Beq(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
+                    index_2 += 8;
                     v_2.push(Label(format!("_T_{label}")));
                 }
             }
@@ -317,11 +322,13 @@ fn post_process(rv: RiscV) -> RiscV {
                 } else if offset <= 1048574 && offset >= -1048576 {
                     v_2.push(Inst(Bge(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
+                    index_2 += 4;
                     v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Bge(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
+                    index_2 += 8;
                     v_2.push(Label(format!("_T_{label}")));
                 }
             }
@@ -333,11 +340,13 @@ fn post_process(rv: RiscV) -> RiscV {
                 } else if offset <= 1048574 && offset >= -1048576 {
                     v_2.push(Inst(Ble(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
+                    index_2 += 4;
                     v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Ble(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
+                    index_2 += 8;
                     v_2.push(Label(format!("_T_{label}")));
                 }
             }
@@ -349,11 +358,13 @@ fn post_process(rv: RiscV) -> RiscV {
                 } else if offset <= 1048574 && offset >= -1048576 {
                     v_2.push(Inst(Bgt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
+                    index_2 += 4;
                     v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Bgt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
+                    index_2 += 8;
                     v_2.push(Label(format!("_T_{label}")));
                 }
             }
@@ -365,13 +376,19 @@ fn post_process(rv: RiscV) -> RiscV {
                 } else if offset <= 1048574 && offset >= -1048576 {
                     v_2.push(Inst(Blt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
+                    index_2 += 4;
                     v_2.push(Label(format!("_T_{label}")));
                 } else {
                     v_2.push(Inst(Blt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(La(T4, label.clone())));
                     v_2.push(Inst(Jr(T4)));
+                    index_2 += 8;
                     v_2.push(Label(format!("_T_{label}")));
                 }
+            }
+            Inst(Call(_)) | Inst(Li(_, _)) | Inst(La(_, _)) => {
+                index_2 += 8;
+                v_2.push(i.clone());
             }
             Inst(_) => {
                 index_2 += 4;
