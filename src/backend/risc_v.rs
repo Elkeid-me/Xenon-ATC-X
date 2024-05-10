@@ -209,7 +209,7 @@ impl Display for Directive {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
             Self::Text => write!(f, ".text"),
-            Self::Global(label) => write!(f, ".global {label}"),
+            Self::Global(label) => write!(f, ".globl {label}"),
             Self::Data => write!(f, ".data"),
             Self::Zero(len) => write!(f, ".zero {len}"),
             Self::Word(nums) => {
