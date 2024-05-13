@@ -80,10 +80,11 @@ impl Generator {
                 let cond_str = self.cond_expr(cond, &block_id, &while_next_id);
                 format!(
                     r"    jump {while_id}
+{while_id}:
+{cond_str}
 {block_id}:
 {block_str}    jump {while_id}
-{while_id}:
-{cond_str}{while_next_id}:
+{while_next_id}:
 "
                 )
             }
