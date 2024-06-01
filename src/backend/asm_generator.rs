@@ -1,7 +1,25 @@
+// Copyright (C) 2024 Elkeid-me
+//
+// This file is part of Xenon ATC-X.
+//
+// Xenon ATC-X is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Xenon ATC-X is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Xenon ATC-X.  If not, see <http://www.gnu.org/licenses/>.
+
 use super::risc_v::{Reg::*, *};
 use crate::risk;
 use koopa::ir::{entities::ValueData, BasicBlock, BinaryOp, FunctionData, Program, Type, TypeKind, Value, ValueKind::*};
-use std::{cmp::max, collections::HashMap, vec};
+use std::{cmp::max, vec};
+type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 
 const CALL_REGS: [Reg; 8] = [A0, A1, A2, A3, A4, A5, A6, A7];
 
@@ -36,7 +54,7 @@ fn generate_context(func_data: &FunctionData) -> Context {
         .collect();
     let args_size = calls.iter().map(|len| max(len - 7, 1)).max().unwrap_or(0) * 4;
     frame_size += args_size;
-    let mut vars = HashMap::new();
+    let mut vars = HashMap::default();
     for node in func_data.layout().bbs().nodes() {
         for &inst in node.insts().keys() {
             match func_data.dfg().value(inst).kind() {
@@ -257,7 +275,7 @@ fn gen_value(
         GetPtr(ptr) => {
             let base = ptr.src();
             let index = ptr.index();
-            let step: usize = risk!(value_type.kind(), TypeKind::Pointer(base) => base.size());
+            let step = risk!(value_type.kind(), TypeKind::Pointer(base) => base.size());
             let (inst, base_reg) = get_ptr(global_vars, context, func_data, base, index, step as i32);
             insts.extend(inst);
             insts.extend(store_value(context, value, base_reg));
@@ -546,7 +564,7 @@ fn global_var(ir: &Program, value_data: &ValueData) -> RiscV {
 }
 pub fn generate(ir: Program) -> RiscV {
     Type::set_ptr_size(4);
-    let mut global_vars = HashMap::new();
+    let mut global_vars = HashMap::default();
     let mut global_insts = RiscV::new();
     for (&value, value_data) in ir.borrow_values().iter().filter(|(_, value_data)| matches!(value_data.kind(), GlobalAlloc(_))) {
         global_vars.insert(value, value_data.name().as_ref().unwrap()[1..].to_string());

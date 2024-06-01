@@ -1,3 +1,20 @@
+// Copyright (C) 2024 Elkeid-me
+//
+// This file is part of Xenon ATC-X.
+//
+// Xenon ATC-X is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Xenon ATC-X is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Xenon ATC-X.  If not, see <http://www.gnu.org/licenses/>.
+
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
@@ -10,10 +27,10 @@ func_decl         =  { function_return_type ~ identifier ~ "(" ~ parameter_list 
 parameter_list    =  { parameter_def ~ ("," ~ parameter_def)* | "void" | "" }
 parameter_def     = _{ ptr_parameter | var_parameter | ptr_parameter_no_name | var_parameter_no_name }
 
-ptr_parameter         =  { int_keyword ~ identifier ~ "[" ~ "]" ~ array_lengths? }
-var_parameter         =  { int_keyword ~ identifier }
-ptr_parameter_no_name =  { int_keyword ~ "[" ~ "]" ~ array_lengths? }
-var_parameter_no_name =  { int_keyword }
+ptr_parameter         = { int_keyword ~ identifier ~ "[" ~ "]" ~ array_lengths? }
+var_parameter         = { int_keyword ~ identifier }
+ptr_parameter_no_name = { int_keyword ~ "[" ~ "]" ~ array_lengths? }
+var_parameter_no_name = { int_keyword }
 
 int_keyword      = @{ "int" ~ !(ASCII_ALPHANUMERIC | "_") }
 const_keyword    = @{ "const" ~ !(ASCII_ALPHANUMERIC | "_")}

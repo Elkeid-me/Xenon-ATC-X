@@ -62,9 +62,7 @@ Xenon 已被废弃，Xenon ATC-X 是其后继项目。ATC-X = **A**dvanced **T**
 
 ## 构建
 
-构建编译器需要 Rust 工具链。构建文档需要 LuaLaTeX。注意，鉴于 ctexart 文档类与 fontspec 2.9b 版本不兼容，在 ctex 更新前，将暂时使用 article 文档类。
-
-> 关于 ctexart 的具体问题，[见这里](https://elkeid-me.github.io/2024/05/02/a-latex-error/)
+构建编译器需要 Rust 工具链。构建文档需要 LuaLaTeX。
 
 ### Windows
 
@@ -73,15 +71,18 @@ Xenon 已被废弃，Xenon ATC-X 是其后继项目。ATC-X = **A**dvanced **T**
 - 运行 `.\build` 或 `.\build xenon` 以构建 Xenon ATC-X 编译器。
 - 如果你的系统中安装了所需字体，运行 `.\build doc` 构建文档。
     这些字体是：
-    - Source Han Serif SC VF
-    - Source Han Sans SC VF
-    - STKaiti（华文楷体）
-    - Noto Serif（可变字体版本）与 Noto Serif Italic（可变字体版本）
-    - SourceCodeVF 与 SourceCodeVF Italic
-    - SourceSans3VF 与 SourceSans3VF Italic
+    - Source Han Serif SC（Regular 和 Bold）
+    - Source Han Sans SC（Regular 和 Bold）
+    - STKaiti
+    - Noto Serif（Regular、Italic、Bold 和 Bold Italic）
+    - JetBrains Mono（Regular、Italic、Bold 和 Bold Italic）
+    - Source Sans 3（Regular、Italic、Bold 和 Bold Italic）
 - 否则，运行 `.\build doc-default-fonts` 构建文档。
-- 运行 `.\build test-koopa` 测试 Koopa IR 生成。
-- 运行 `.\build test-risc-v` 测试目标代码生成。
+
+- 在安装了测试环境的情况下，可以：
+    - 运行 `.\build test-koopa` 测试 Koopa IR 生成。
+    - 运行 `.\build test-risc-v` 测试目标代码生成。
+
 - 运行 `.\build all` 同时构建编译器和文档。
 
 ### 其他操作系统

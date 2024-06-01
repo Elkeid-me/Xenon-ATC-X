@@ -1,3 +1,20 @@
+// Copyright (C) 2024 Elkeid-me
+//
+// This file is part of Xenon ATC-X.
+//
+// Xenon ATC-X is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Xenon ATC-X is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Xenon ATC-X.  If not, see <http://www.gnu.org/licenses/>.
+
 mod expr;
 
 use super::ast::{Expr::*, ExprConst::*, *};
@@ -8,8 +25,9 @@ use pest::pratt_parser::Assoc::{Left, Right};
 use pest::pratt_parser::{Op, PrattParser};
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
-use std::collections::{HashMap, HashSet};
 use std::{iter::repeat, mem::take};
+type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
+type HashSet<K> = rustc_hash::FxHashSet<K>;
 
 #[derive(Parser)]
 #[grammar = "frontend/sysy.pest"]
@@ -170,11 +188,11 @@ impl ASTBuilder {
             .op(Op::postfix(Rule::post_inc) | Op::postfix(Rule::post_dec));
         Self {
             expr_parser,
-            table: vec![HashMap::new()],
-            global_name_table: HashSet::new(),
+            table: vec![HashMap::default()],
+            global_name_table: HashSet::default(),
             local_name_table: None,
-            types: HashMap::new(),
-            inits: HashMap::new(),
+            types: HashMap::default(),
+            inits: HashMap::default(),
             counter: Counter { value: 0 },
         }
     }
@@ -234,7 +252,7 @@ impl ASTBuilder {
         self.inits.insert(handler, init);
     }
     fn enter_scope(&mut self) {
-        self.table.push(HashMap::new());
+        self.table.push(HashMap::default());
     }
     fn exit_scope(&mut self) {
         self.table.pop();
@@ -259,7 +277,7 @@ impl ASTBuilder {
         }
     }
     fn enter_function(&mut self) {
-        self.local_name_table = Some(HashSet::new());
+        self.local_name_table = Some(HashSet::default());
         self.enter_scope();
     }
     fn exit_function(&mut self) {
