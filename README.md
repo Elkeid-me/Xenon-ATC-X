@@ -71,12 +71,12 @@ Xenon 已被废弃，Xenon ATC-X 是其后继项目。ATC-X = **A**dvanced **T**
 - 运行 `.\build` 或 `.\build xenon` 以构建 Xenon ATC-X 编译器。
 - 如果你的系统中安装了所需字体，运行 `.\build doc` 构建文档。
     这些字体是：
-    - Source Han Serif SC VF
-    - Source Han Sans SC VF
+    - Source Han Serif SC（Regular 和 Bold）
+    - Source Han Sans SC（Regular 和 Bold）
     - STKaiti
-    - Noto Serif 与 Noto Serif Italic
-    - SourceCodeVF 与 SourceCodeVF Italic
-    - SourceSans3VF 与 SourceSans3VF Italic
+    - Noto Serif（Regular、Italic、Bold 和 Bold Italic）
+    - Source Code Pro（Regular、Italic、Bold 和 Bold Italic）
+    - Source Sans 3（Regular、Italic、Bold 和 Bold Italic）
 - 否则，运行 `.\build doc-default-fonts` 构建文档。
 - 运行 `.\build test-koopa` 测试 Koopa IR 生成。
 - 运行 `.\build test-risc-v` 测试目标代码生成。
