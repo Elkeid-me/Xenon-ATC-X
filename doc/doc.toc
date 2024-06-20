@@ -1,0 +1,34 @@
+\contentsline {section}{\numberline {1}概述}{2}{section.1}%
+\contentsline {subsection}{\numberline {1.1}基本功能}{2}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}主要特点}{2}{subsection.1.2}%
+\contentsline {section}{\numberline {2}编译器设计}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}主要模块构成}{2}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}主要数据结构}{2}{subsection.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}抽象语法树}{2}{subsubsection.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}内存形式的汇编}{4}{subsubsection.2.2.2}%
+\contentsline {subsection}{\numberline {2.3}主要设计考虑及算法选择}{5}{subsection.2.3}%
+\contentsline {subsubsection}{\numberline {2.3.1}符号表}{5}{subsubsection.2.3.1}%
+\contentsline {subsubsection}{\numberline {2.3.2}寄存器分配}{5}{subsubsection.2.3.2}%
+\contentsline {subsubsection}{\numberline {2.3.3}优化}{5}{subsubsection.2.3.3}%
+\contentsline {section}{\numberline {3}编译器实现}{6}{section.3}%
+\contentsline {subsection}{\numberline {3.1}预处理器}{6}{subsection.3.1}%
+\contentsline {subsubsection}{\numberline {3.1.1}换行符替换}{6}{subsubsection.3.1.1}%
+\contentsline {subsubsection}{\numberline {3.1.2}行拼接}{6}{subsubsection.3.1.2}%
+\contentsline {subsubsection}{\numberline {3.1.3}去除注释}{7}{subsubsection.3.1.3}%
+\contentsline {subsection}{\numberline {3.2}解析器}{7}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}第一次解析}{7}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}第二次解析}{7}{subsubsection.3.2.2}%
+\contentsline {subsubsection}{\numberline {3.2.3}语义检查}{7}{subsubsection.3.2.3}%
+\contentsline {subsection}{\numberline {3.3}IR 生成器}{8}{subsection.3.3}%
+\contentsline {subsubsection}{\numberline {3.3.1}生成粗 IR}{8}{subsubsection.3.3.1}%
+\contentsline {subsubsection}{\numberline {3.3.2}IR 后处理}{8}{subsubsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.4}后端}{10}{subsection.3.4}%
+\contentsline {subsubsection}{\numberline {3.4.1}汇编生成}{10}{subsubsection.3.4.1}%
+\contentsline {subsubsection}{\numberline {3.4.2}后处理与优化}{10}{subsubsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.5}工具库介绍}{10}{subsection.3.5}%
+\contentsline {subsubsection}{\numberline {3.5.1}pest}{10}{subsubsection.3.5.1}%
+\contentsline {subsubsection}{\numberline {3.5.2}koopa}{11}{subsubsection.3.5.2}%
+\contentsline {subsubsection}{\numberline {3.5.3}generator}{11}{subsubsection.3.5.3}%
+\contentsline {section}{\numberline {4}语言扩展汇总}{11}{section.4}%
+\contentsline {section}{\numberline {5}计划中但未实现的功能}{12}{section.5}%
+\contentsline {section}{\numberline {6}其他}{12}{section.6}%
