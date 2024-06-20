@@ -15,16 +15,16 @@ Xenon 已被废弃，Xenon ATC-X（本项目）是其后继项目。ATC-X = \tex
 \begin{enumerate}
     \item 预处理器，负责换行符替换（见 \ref{stage-1}）、行拼接（见 \ref{stage-2}）和注释去除。
     \item 前端，负责将不包含注释的 SysY 源代码翻译为 Koopa IR。前端又可以细分为解析器和 IR 生成器。
-    \item 后端，负责将 Koopa IR 翻译为 RISC-V（RV32IM）。
+    \item 后端，负责将 Koopa IR 翻译为 RISC-V 汇编（RV32IM）。
 \end{enumerate}
 \subsection{主要数据结构}
 \subsubsection{抽象语法树}
 
-语法树的根是 \inlinec{TranslationUnit}（翻译单元），\inlinec{TranslationUnit} 实质上是由 \inlinec{Definition}（符号定义）构成的列表。\inlinec{Definition} 是一个元组，包含符号的标识符、初始化器和符号的类型。
+语法树的根是 \inlinec{TranslationUnit}（翻译单元），\inlinec{TranslationUnit} 实质上是由 \inlinec{Definition}（符号定义）构成的列表。\inlinec{Definition} 是一个元组，包含符号的\textit{标识符}、\textit{初始化器}和符号的\textit{类型}。
 
 \textit{初始化器}是一个可区分联合，分为：
 \begin{itemize}
-    \item \inlinerust{Function(Vec<Option<String>>, Block)}（函数），其中 \inlinerust{Vec<Option<String>>} 记录了各个参数的标识符，\inlinerust{Block} 存储了函数体；
+    \item \inlinerust{Function(Vec<Option<String>>, Block)}（函数），其中 \inlinerust{Vec<Option<String>>} 记录了各个参数的标识符（可选），\inlinerust{Block} 存储了函数体；
     \item \inlinerust{Expr(Expr)}（表达式）；
     \item \inlinerust{Const(i32)}（常量）；
     \item \inlinerust{List(InitList)}（初始化列表）；
@@ -40,7 +40,7 @@ Xenon 已被废弃，Xenon ATC-X（本项目）是其后继项目。ATC-X = \tex
     \item \inlinerust{Function(Box<Type>, Vec<Type>)}（函数），\inlinerust{Box<Type>} 存储返回值类型，而 \inlinerust{Vec<Type>} 存储各个参数的类型；
 \end{itemize}
 
-\textit{初始化器}和\textit{类型}\textbf{共同决定}了一个符号。例如：
+初始化器和类型\textbf{共同决定}了一个符号。例如：
 \begin{itemize}
     \item \inlinec{int a;} 定义的符号 \inlinec{a}
     \begin{itemize}
@@ -94,7 +94,7 @@ Xenon 已被废弃，Xenon ATC-X（本项目）是其后继项目。ATC-X = \tex
     \item \inlinerust{Block}（复合语句），\inlinerust{Block} 套 \inlinerust{Block} 是很正常的。
 \end{itemize}
 
-\inlinerust{Expr} 是表达式，仅摘录一部分：
+\inlinerust{Expr}（表达式）是语法树的核心，仅摘录一部分：
 \begin{minted}[linenos,frame=single]{rust}
 pub enum Expr {
     Mul(Box<Expr>, Box<Expr>),
@@ -136,9 +136,9 @@ pub enum Inst {
     \item 函数调用时前 8 个函数参数加载到 \texttt{a0} \~{} \texttt{a7} 寄存器，被调用的函数立即将参数写入内存。
 \end{itemize}
 \subsubsection{优化}
-在前端，对表达式进行代数化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}；当 \inlinec{if} 或 \inlinec{while} 的条件表达式可以确定时（如 \inlinec{while (x - x)}），则生成的 IR 直接使用 \texttt{j} 指令。
+在前端，对表达式进行代数化简，如 \inlinec{w = (x - x) * (y + z);} 会直接化简为 \inlinec{w = 0;}；当 \inlinec{if} 或 \inlinec{while} 的条件表达式可以确定时（如 \inlinec{while (x - x)}），则生成的 IR 直接使用 \texttt{jump} 指令。
 
-生成汇编时，对于栈上数据的引用，当栈大小小于 2048 字节时，使用 \texttt{sp} 寄存器访问；栈大小在 2048 \~{} 4096 字节时，高地址的数据使用 \texttt{bp} 寄存器访问。
+生成汇编时，对于栈上数据的引用，当栈大小小于 2048 字节时，使用 \texttt{sp} 寄存器访问；栈大小在 2048 \~{} 4096 字节时，高地址的数据使用 \texttt{fp}（\texttt{s0}）寄存器访问。
 
 在生成汇编后进行窥孔优化。具体包含：
 \begin{itemize}
@@ -215,7 +215,7 @@ int main() {
 预处理器按照 C 语言标准去除注释。
 \subsection{解析器}
 \subsubsection{第一次解析}
-第一次解析中，使用 pest\footnote{\url{https://pest.rs}} 将代码处理为语法树。因为 pest 设计上的局限性，此处语法树使用的是 pest 中 \inlinerust{Pairs<Rule>} 的形式。此外，这里还没有对运算符优先级做处理，表达式仍然表现为 \inlinerust{Pair} 流的形式。
+第一次解析中，使用 pest 将代码处理为语法树。因为 pest 设计上的局限性，此处语法树使用的是 pest 中 \inlinerust{Pairs<Rule>} 的形式。此外，这里还没有对运算符优先级做处理，表达式仍然表现为 \inlinerust{Pair} 流的形式。
 \subsubsection{第二次解析}
 遍历上述 \inlinerust{Pairs<Rule>} 的语法树，转换为 \inlinerust{TranslationUnit}。同时，在这一步使用 pest 提供的 \inlinerust{PrattParser<Rule>} 处理运算符优先级。
 \subsubsection{语义检查}\label{semantic-checking}
@@ -282,7 +282,7 @@ int main() {
 }
 \end{minted}
 会生成 IR：
-\begin{minted}[linenos,frame=single]{c}
+\begin{minted}[linenos,frame=single]{text}
 fun @f() {
 %1:
 }
@@ -304,7 +304,7 @@ fun @main(): i32 {
     \item 如果某个基本块的结尾不是 \texttt{jump}、\texttt{br} 或 \texttt{ret}，则根据函数返回值类型添加 \texttt{ret 0} 或 \texttt{ret}。
 \end{enumerate}
 上述 IR 后处理的结果为：
-\begin{minted}[linenos,frame=single]{c}
+\begin{minted}[linenos,frame=single]{text}
 fun @f() {
 %1:
     ret
