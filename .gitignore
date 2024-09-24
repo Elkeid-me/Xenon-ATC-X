@@ -1,7 +1,6 @@
 /target
 /test
 rustfmt.toml
-Cargo.lock
 /doc/*.aux
 /doc/*.log
 /doc/*.out
