@@ -75,11 +75,14 @@ Xenon 已被废弃，Xenon ATC-X 是其后继项目。ATC-X = **A**dvanced **T**
     - Source Han Sans SC（Regular 和 Bold）
     - STKaiti
     - Noto Serif（Regular、Italic、Bold 和 Bold Italic）
-    - Source Code Pro（Regular、Italic、Bold 和 Bold Italic）
+    - JetBrains Mono（Regular、Italic、Bold 和 Bold Italic）
     - Source Sans 3（Regular、Italic、Bold 和 Bold Italic）
 - 否则，运行 `.\build doc-default-fonts` 构建文档。
-- 运行 `.\build test-koopa` 测试 Koopa IR 生成。
-- 运行 `.\build test-risc-v` 测试目标代码生成。
+
+- 在安装了测试环境的情况下，可以：
+    - 运行 `.\build test-koopa` 测试 Koopa IR 生成。
+    - 运行 `.\build test-risc-v` 测试目标代码生成。
+
 - 运行 `.\build all` 同时构建编译器和文档。
 
 ### 其他操作系统
@@ -97,3 +100,5 @@ Xenon 已被废弃，Xenon ATC-X 是其后继项目。ATC-X = **A**dvanced **T**
     lualatex -shell-escape "\NewDocumentCommand{\DefaultFonts}{}{}\input{doc.tex}"
     ```
     构建文档
+
+> 文档通过 `minted` 包实现代码高亮。随着 `minted` v3.x 的发布，未来构建文档将不需要 `-shell-escape` 参数。
