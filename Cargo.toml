@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-koopa = "0.0.7"
+koopa = "0.0.8"
 pest = "^2.7"
 pest_derive = "^2.7"
 generator = "^0.8"
