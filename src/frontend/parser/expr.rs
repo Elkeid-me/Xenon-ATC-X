@@ -38,7 +38,11 @@ impl ASTBuilder {
                     let mut iter = exp.into_inner();
                     Ok(Array(
                         iter.next().unwrap().as_str().to_string(),
-                        iter.next().unwrap().into_inner().map(|p| self.parse_expr(p)).collect::<Result<_, _>>()?,
+                        iter.next()
+                            .unwrap()
+                            .into_inner()
+                            .map(|p| self.parse_expr(p))
+                            .collect::<Result<_, _>>()?,
                         false,
                     ))
                 }
@@ -136,7 +140,7 @@ impl ASTBuilder {
     }
 
     // 返回值：表达式的值类型、是否为可修改左值、是否为整型常量表达式
-    pub fn expr_check(&self, expr: &Expr) -> Result<(RefType, ExprCategory, ExprConst), String> {
+    pub fn expr_check(&self, expr: &Expr) -> Result<(RefType<'_>, ExprCategory, ExprConst), String> {
         match expr {
             Mul(l, r)
             | Div(l, r)
@@ -254,7 +258,7 @@ impl ASTBuilder {
         }
     }
 
-    pub fn expr_type(&self, expr: &Expr) -> Result<RefType, String> {
+    pub fn expr_type(&self, expr: &Expr) -> Result<RefType<'_>, String> {
         Ok(self.expr_check(expr)?.0)
     }
 
@@ -465,51 +469,66 @@ impl ASTBuilder {
                 (Num(a), _, _) => (Num(!a), true, false),
                 (e, e_s, e_se) => (Not(Box::new(e)), e_s, e_se),
             },
-            PostInc(expr) => match self.simplify(*expr) {
-                (e, e_s, _) => (PostInc(Box::new(e)), e_s, true),
-            },
-            PostDec(expr) => match self.simplify(*expr) {
-                (e, e_s, _) => (PostDec(Box::new(e)), e_s, true),
-            },
-            PreInc(expr) => match self.simplify(*expr) {
-                (e, e_s, _) => (PreInc(Box::new(e)), e_s, true),
-            },
-            PreDec(expr) => match self.simplify(*expr) {
-                (e, e_s, _) => (PreDec(Box::new(e)), e_s, true),
-            },
-            Assignment(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (Assignment(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            AddAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (AddAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            SubAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (SubAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            MulAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (MulAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            DivAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (DivAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            ModAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (ModAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            AndAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (AndAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            OrAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (OrAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            XorAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (XorAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            ShLAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (ShLAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
-            SaRAssign(l, r) => match (self.simplify(*l), self.simplify(*r)) {
-                ((l, l_s, _), (r, r_s, _)) => (SaRAssign(Box::new(l), Box::new(r)), l_s || r_s, true),
-            },
+            PostInc(expr) => {
+                let (e, e_s, _) = self.simplify(*expr);
+                (PostInc(Box::new(e)), e_s, true)
+            }
+            PostDec(expr) => {
+                let (e, e_s, _) = self.simplify(*expr);
+                (PostDec(Box::new(e)), e_s, true)
+            }
+            PreInc(expr) => {
+                let (e, e_s, _) = self.simplify(*expr);
+                (PreInc(Box::new(e)), e_s, true)
+            }
+            PreDec(expr) => {
+                let (e, e_s, _) = self.simplify(*expr);
+                (PreDec(Box::new(e)), e_s, true)
+            }
+            Assignment(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (Assignment(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            AddAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (AddAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            SubAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (SubAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            MulAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (MulAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            DivAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (DivAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            ModAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (ModAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            AndAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (AndAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            OrAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (OrAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            XorAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (XorAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            ShLAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (ShLAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
+            SaRAssign(l, r) => {
+                let ((l, l_s, _), (r, r_s, _)) = (self.simplify(*l), self.simplify(*r));
+                (SaRAssign(Box::new(l), Box::new(r)), l_s || r_s, true)
+            }
             Func(id, args) => {
                 let (args_simplified, s) = args.into_iter().fold((Vec::new(), false), |(mut v, mut s), expr| {
                     let (e, _s, _) = self.simplify(expr);
@@ -527,13 +546,15 @@ impl ASTBuilder {
                     _ => unreachable!(),
                 };
                 let (subscripts_simplified, s, se) =
-                    subscripts.into_iter().fold((Vec::new(), false, false), |(mut v, mut s, mut se), expr| {
-                        let (e, _s, _se) = self.simplify(expr);
-                        v.push(e);
-                        s = s || _s;
-                        se = se || _se;
-                        (v, s, se)
-                    });
+                    subscripts
+                        .into_iter()
+                        .fold((Vec::new(), false, false), |(mut v, mut s, mut se), expr| {
+                            let (e, _s, _se) = self.simplify(expr);
+                            v.push(e);
+                            s = s || _s;
+                            se = se || _se;
+                            (v, s, se)
+                        });
                 match (subscripts_simplified.iter().all(|expr| matches!(expr, Num(_))), init) {
                     (true, Some(Init::ConstList(l))) => {
                         let mut r_ref = l;
@@ -557,7 +578,7 @@ impl ASTBuilder {
         }
     }
 
-    pub fn process_expr_impl(&self, expr: Pair<Rule>) -> Result<(Expr, RefType, ExprConst), String> {
+    pub fn process_expr_impl(&self, expr: Pair<Rule>) -> Result<(Expr, RefType<'_>, ExprConst), String> {
         let expr = self.parse_expr(expr)?;
         let (ty, _, is_const) = self.expr_check(&expr)?;
         let (expr, _, _) = self.simplify(expr);

@@ -18,7 +18,7 @@
 mod asm_generator;
 mod risc_v;
 
-use generator::{done, Gn};
+use generator::{Gn, done};
 use risc_v::{Inst::*, Reg::*, RiscV, RiscVItem::*};
 type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 
@@ -286,7 +286,7 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(J(label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 1048570 && offset >= -1048570 {
+                if (-1048570..=1048570).contains(&offset) {
                     v_2.push(i.clone());
                 } else {
                     v_2.push(Inst(La(T4, label.clone())));
@@ -297,9 +297,9 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(Beq(rs_1, rs_2, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 4090 && offset >= -4090 {
+                if (-4090..=4090).contains(&offset) {
                     v_2.push(i.clone());
-                } else if offset <= 1048570 && offset >= -1048570 {
+                } else if (-1048570..=1048570).contains(&offset) {
                     v_2.push(Inst(Bne(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
                     index_2 += 4;
@@ -315,9 +315,9 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(Bne(rs_1, rs_2, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 4090 && offset >= -4090 {
+                if (-4090..=4090).contains(&offset) {
                     v_2.push(i.clone());
-                } else if offset <= 1048570 && offset >= -1048570 {
+                } else if (-1048570..=1048570).contains(&offset) {
                     v_2.push(Inst(Beq(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
                     index_2 += 4;
@@ -333,9 +333,9 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(Blt(rs_1, rs_2, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 4090 && offset >= -4090 {
+                if (-4090..=4090).contains(&offset) {
                     v_2.push(i.clone());
-                } else if offset <= 1048570 && offset >= -1048570 {
+                } else if (-1048570..=1048570).contains(&offset) {
                     v_2.push(Inst(Bge(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
                     index_2 += 4;
@@ -351,9 +351,9 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(Bgt(rs_1, rs_2, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 4090 && offset >= -4090 {
+                if (-4090..=4090).contains(&offset) {
                     v_2.push(i.clone());
-                } else if offset <= 1048570 && offset >= -1048570 {
+                } else if (-1048570..=1048570).contains(&offset) {
                     v_2.push(Inst(Ble(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
                     index_2 += 4;
@@ -369,9 +369,9 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(Ble(rs_1, rs_2, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 4090 && offset >= -4090 {
+                if (-4090..=4090).contains(&offset) {
                     v_2.push(i.clone());
-                } else if offset <= 1048570 && offset >= -1048570 {
+                } else if (-1048570..=1048570).contains(&offset) {
                     v_2.push(Inst(Bgt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
                     index_2 += 4;
@@ -387,9 +387,9 @@ fn post_process(rv: RiscV) -> RiscV {
             Inst(Bge(rs_1, rs_2, label)) => {
                 index_2 += 4;
                 let offset = labels.get(label).unwrap() - index_2;
-                if offset <= 4090 && offset >= -4090 {
+                if (-4090..=4090).contains(&offset) {
                     v_2.push(i.clone());
-                } else if offset <= 1048570 && offset >= -1048570 {
+                } else if (-1048570..=1048570).contains(&offset) {
                     v_2.push(Inst(Blt(*rs_1, *rs_2, format!("_T_{label}"))));
                     v_2.push(Inst(J(label.clone())));
                     index_2 += 4;

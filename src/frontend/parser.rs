@@ -23,9 +23,9 @@ use super::ty::Type::{self, *};
 use crate::risk;
 use pest::pratt_parser::Assoc::{Left, Right};
 use pest::pratt_parser::{Op, PrattParser};
-use pest::{iterators::Pair, Parser};
+use pest::{Parser, iterators::Pair};
 use pest_derive::Parser;
-use std::{iter::repeat, mem::take};
+use std::mem::take;
 type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 type HashSet<K> = rustc_hash::FxHashSet<K>;
 
@@ -101,7 +101,7 @@ impl InitListTrait for ConstInitListItem {
     fn generate_empty_list(len: &[usize]) -> Self {
         match len.len() {
             0 => Self::Num(0),
-            _ => Self::new_list(repeat(Self::generate_empty_list(&len[1..])).take(len[0]).collect()),
+            _ => Self::new_list(std::iter::repeat_n(Self::generate_empty_list(&len[1..]), len[0]).collect()),
         }
     }
     fn add_empty_list(len: &[usize], init_list: Vec<Self>) -> Vec<Self> {
@@ -113,7 +113,7 @@ impl InitListTrait for ConstInitListItem {
                 Self::ConstInitList(list) => Self::ConstInitList(Box::new(Self::add_empty_list(&len[1..], *list))),
                 i => i,
             })
-            .chain(repeat(empty_list).take(empty_list_n))
+            .chain(std::iter::repeat_n(empty_list, empty_list_n))
             .collect()
     }
 }
@@ -134,7 +134,7 @@ impl InitListTrait for InitListItem {
     fn generate_empty_list(len: &[usize]) -> Self {
         match len.len() {
             0 => Self::Expr(Num(0)),
-            _ => Self::new_list(repeat(Self::generate_empty_list(&len[1..])).take(len[0]).collect()),
+            _ => Self::new_list(std::iter::repeat_n(Self::generate_empty_list(&len[1..]), len[0]).collect()),
         }
     }
     fn add_empty_list(len: &[usize], init_list: Vec<Self>) -> Vec<Self> {
@@ -146,7 +146,7 @@ impl InitListTrait for InitListItem {
                 Self::InitList(list) => Self::InitList(Box::new(Self::add_empty_list(&len[1..], *list))),
                 expr => expr,
             })
-            .chain(repeat(empty_list).take(empty_list_n))
+            .chain(std::iter::repeat_n(empty_list, empty_list_n))
             .collect()
     }
 }
@@ -212,11 +212,12 @@ impl ASTBuilder {
         match (&ty, &init) {
             (Function(_, _), None) => match self.table.last_mut().unwrap().insert(id.clone(), (handler, id.clone())) {
                 Some((old_handler, _)) => {
-                    if let Some(other_ty) = self.types.get(&old_handler) {
-                        if ty == *other_ty && self.inits.get(&old_handler).unwrap().is_none() {
-                            self.table.last_mut().unwrap().insert(id.clone(), (old_handler, id.clone()));
-                            return Ok((old_handler, id));
-                        }
+                    if let Some(other_ty) = self.types.get(&old_handler)
+                        && ty == *other_ty
+                        && self.inits.get(&old_handler).unwrap().is_none()
+                    {
+                        self.table.last_mut().unwrap().insert(id.clone(), (old_handler, id.clone()));
+                        return Ok((old_handler, id));
                     }
                     Err(format!("标识符 {id} 在当前作用域中已存在"))
                 }
@@ -229,7 +230,12 @@ impl ASTBuilder {
             _ => {
                 let (mangled_id, prefix_len) = self.name_mangling(id, &ty);
                 let original_id = &mangled_id[prefix_len..];
-                match self.table.last_mut().unwrap().insert(original_id.to_string(), (handler, mangled_id.clone())) {
+                match self
+                    .table
+                    .last_mut()
+                    .unwrap()
+                    .insert(original_id.to_string(), (handler, mangled_id.clone()))
+                {
                     Some(_) => Err(format!("标识符 {original_id} 在当前作用域中已存在")),
                     None => {
                         if matches!(init, Some(Init::ConstList(_))) {
@@ -317,7 +323,7 @@ impl ASTBuilder {
         for ele in init_list.into_inner() {
             match ele.as_rule() {
                 Rule::initializer_list => {
-                    if len_prod.len() == 1 || sum % len_prod[0] != 0 {
+                    if len_prod.len() == 1 || !sum.is_multiple_of(len_prod[0]) {
                         return Err(format!("{ele:?} 不能是初始化列表"));
                     }
                     //   对于 `int lint[1][14][51][4]`，我们计算一个列表：`L = {4, 204, 2856, 2856}`，这个数组给出了每一层的大小.
@@ -333,7 +339,10 @@ impl ASTBuilder {
 
                     //   对于 `int lint[1][14][51][4]`，rev_depth == 3 时，意味着 init_list 对应 int[14][51][4]
                     // 需要寻位 0 次
-                    let rev_depth = len_prod.iter().position(|prod| sum % prod != 0).unwrap_or(len_prod.len() - 1);
+                    let rev_depth = len_prod
+                        .iter()
+                        .position(|prod| !sum.is_multiple_of(*prod))
+                        .unwrap_or(len_prod.len() - 1);
                     let depth = len_prod.len() - rev_depth - 1;
                     let (l, s) = self.parse_init_list_impl(ele, &len_prod[0..rev_depth])?;
                     let v_ref = (0..depth).fold(&mut v, |state, _| {
@@ -347,7 +356,7 @@ impl ASTBuilder {
                 }
                 Rule::expression => {
                     let v_ref = len_prod.iter().rev().skip(1).fold(&mut v, |state, i| {
-                        if state.is_empty() || sum % i == 0 {
+                        if state.is_empty() || sum.is_multiple_of(*i) {
                             state.push(T::new_list(Vec::new()));
                         }
                         T::get_last(state)
@@ -431,9 +440,11 @@ impl ASTBuilder {
             | Rule::break_keyword
             | Rule::continue_keyword => Ok(vec![BlockItem::Statement(self.parse_statement(pair, in_while, ret_type)?)]),
             Rule::empty_statement => Ok(Vec::new()),
-            Rule::definitions_in_if_or_while_non_block => {
-                pair.into_inner().skip(1).map(|pair| Ok(BlockItem::Def(self.parse_definition(pair)?))).collect::<Result<_, _>>()
-            }
+            Rule::definitions_in_if_or_while_non_block => pair
+                .into_inner()
+                .skip(1)
+                .map(|pair| Ok(BlockItem::Def(self.parse_definition(pair)?)))
+                .collect::<Result<_, _>>(),
             _ => unreachable!(),
         }
     }
@@ -602,7 +613,11 @@ impl ASTBuilder {
         let ast = sysy_lib.into_iter().chain(ast_iter).collect::<Result<_, _>>()?;
         match self.search("main") {
             Some((Function(ret_type, para_ty), _, Some(_))) if matches!(ret_type.as_ref(), Int) && para_ty.is_empty() => {
-                Ok(TranslationUnit { ast, types: self.types, inits: self.inits })
+                Ok(TranslationUnit {
+                    ast,
+                    types: self.types,
+                    inits: self.inits,
+                })
             }
             _ => Err("没有 main 函数，或 main 函数不是 () -> int".to_string()),
         }

@@ -116,7 +116,7 @@ impl Generator {
             }
             (false, true) => {
                 let next_id = self.counter.get();
-                let (then_block_str, then_id) = self.block(then_block, &while_id, &while_next_id);
+                let (then_block_str, then_id) = self.block(then_block, while_id, while_next_id);
                 let cond_str = self.cond_expr(cond, &then_id, &next_id);
                 format!(
                     r"{cond_str}{then_id}:
@@ -127,7 +127,7 @@ impl Generator {
             }
             (true, false) => {
                 let next_id = self.counter.get();
-                let (else_block_str, else_id) = self.block(else_block, &while_id, &while_next_id);
+                let (else_block_str, else_id) = self.block(else_block, while_id, while_next_id);
                 let cond_str = self.cond_expr(cond, &next_id, &else_id);
                 format!(
                     r"{cond_str}{else_id}:
@@ -138,8 +138,8 @@ impl Generator {
             }
             (false, false) => {
                 let next_id = self.counter.get();
-                let (then_block_str, then_id) = self.block(then_block, &while_id, &while_next_id);
-                let (else_block_str, else_id) = self.block(else_block, &while_id, &while_next_id);
+                let (then_block_str, then_id) = self.block(then_block, while_id, while_next_id);
+                let (else_block_str, else_id) = self.block(else_block, while_id, while_next_id);
                 let cond_str = self.cond_expr(cond, &then_id, &else_id);
                 format!(
                     r"{cond_str}{then_id}:

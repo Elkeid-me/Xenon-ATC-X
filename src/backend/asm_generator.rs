@@ -17,7 +17,7 @@
 
 use super::risc_v::{Reg::*, *};
 use crate::risk;
-use koopa::ir::{entities::ValueData, BasicBlock, BinaryOp, FunctionData, Program, Type, TypeKind, Value, ValueKind::*};
+use koopa::ir::{BasicBlock, BinaryOp, FunctionData, Program, Type, TypeKind, Value, ValueKind::*, entities::ValueData};
 use std::{cmp::max, vec};
 type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 
@@ -77,7 +77,13 @@ fn generate_context(func_data: &FunctionData) -> Context {
     }
     frame_size = (frame_size + 15) & !15;
     let save_s0 = frame_size > 2048;
-    Context { vars, labels, frame_size, save_ra, save_s0 }
+    Context {
+        vars,
+        labels,
+        frame_size,
+        save_ra,
+        save_s0,
+    }
 }
 
 fn load_value(context: &Context, func_data: &FunctionData, value: Value, reg: &mut Reg) -> RiscV {
@@ -108,18 +114,30 @@ fn load_value(context: &Context, func_data: &FunctionData, value: Value, reg: &m
 fn store_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
     if context.save_s0 {
         let s0_offset = offset - context.frame_size;
-        if offset >= -2048 && offset <= 2047 {
+        if (-2048..=2047).contains(&offset) {
             vec![RiscVItem::Inst(Inst::Sw(reg, offset, Sp))]
-        } else if s0_offset >= -2048 && s0_offset <= 2047 {
+        } else if (-2048..=2047).contains(&s0_offset) {
             vec![RiscVItem::Inst(Inst::Sw(reg, s0_offset, S0))]
-        } else if offset >= -4096 && offset < -2048 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)), RiscVItem::Inst(Inst::Sw(reg, offset + 2048, T3))]
+        } else if (-4096..-2048).contains(&offset) {
+            vec![
+                RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)),
+                RiscVItem::Inst(Inst::Sw(reg, offset + 2048, T3)),
+            ]
         } else if offset > 2047 && offset <= 4094 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)), RiscVItem::Inst(Inst::Sw(reg, offset - 2047, T3))]
-        } else if s0_offset >= -4096 && s0_offset < -2048 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, S0, -2048)), RiscVItem::Inst(Inst::Sw(reg, s0_offset + 2048, T3))]
+            vec![
+                RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)),
+                RiscVItem::Inst(Inst::Sw(reg, offset - 2047, T3)),
+            ]
+        } else if (-4096..-2048).contains(&s0_offset) {
+            vec![
+                RiscVItem::Inst(Inst::Addi(T3, S0, -2048)),
+                RiscVItem::Inst(Inst::Sw(reg, s0_offset + 2048, T3)),
+            ]
         } else if s0_offset > 2047 && s0_offset <= 4094 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, S0, 2047)), RiscVItem::Inst(Inst::Sw(reg, s0_offset - 2047, T3))]
+            vec![
+                RiscVItem::Inst(Inst::Addi(T3, S0, 2047)),
+                RiscVItem::Inst(Inst::Sw(reg, s0_offset - 2047, T3)),
+            ]
         } else {
             vec![
                 RiscVItem::Inst(Inst::Li(T3, offset)),
@@ -128,7 +146,7 @@ fn store_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
             ]
         }
     } else {
-        if offset >= -2048 && offset <= 2047 {
+        if (-2048..=2047).contains(&offset) {
             vec![RiscVItem::Inst(Inst::Sw(reg, offset, Sp))]
         } else {
             vec![
@@ -143,18 +161,30 @@ fn store_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
 fn load_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
     if context.save_s0 {
         let s0_offset = offset - context.frame_size;
-        if offset >= -2048 && offset <= 2047 {
+        if (-2048..=2047).contains(&offset) {
             vec![RiscVItem::Inst(Inst::Lw(reg, offset, Sp))]
-        } else if s0_offset >= -2048 && s0_offset <= 2047 {
+        } else if (-2048..=2047).contains(&s0_offset) {
             vec![RiscVItem::Inst(Inst::Lw(reg, s0_offset, S0))]
-        } else if offset >= -4096 && offset < -2048 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)), RiscVItem::Inst(Inst::Lw(reg, offset + 2048, T3))]
+        } else if (-4096..-2048).contains(&offset) {
+            vec![
+                RiscVItem::Inst(Inst::Addi(T3, Sp, -2048)),
+                RiscVItem::Inst(Inst::Lw(reg, offset + 2048, T3)),
+            ]
         } else if offset > 2047 && offset <= 4094 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)), RiscVItem::Inst(Inst::Lw(reg, offset - 2047, T3))]
-        } else if s0_offset >= -4096 && s0_offset < -2048 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, S0, -2048)), RiscVItem::Inst(Inst::Lw(reg, s0_offset + 2048, T3))]
+            vec![
+                RiscVItem::Inst(Inst::Addi(T3, Sp, 2047)),
+                RiscVItem::Inst(Inst::Lw(reg, offset - 2047, T3)),
+            ]
+        } else if (-4096..-2048).contains(&s0_offset) {
+            vec![
+                RiscVItem::Inst(Inst::Addi(T3, S0, -2048)),
+                RiscVItem::Inst(Inst::Lw(reg, s0_offset + 2048, T3)),
+            ]
         } else if s0_offset > 2047 && s0_offset <= 4094 {
-            vec![RiscVItem::Inst(Inst::Addi(T3, S0, 2047)), RiscVItem::Inst(Inst::Lw(reg, s0_offset - 2047, T3))]
+            vec![
+                RiscVItem::Inst(Inst::Addi(T3, S0, 2047)),
+                RiscVItem::Inst(Inst::Lw(reg, s0_offset - 2047, T3)),
+            ]
         } else {
             vec![
                 RiscVItem::Inst(Inst::Li(T3, offset)),
@@ -163,7 +193,7 @@ fn load_value_offset(context: &Context, offset: i32, reg: Reg) -> RiscV {
             ]
         }
     } else {
-        if offset >= -2048 && offset <= 2047 {
+        if (-2048..=2047).contains(&offset) {
             vec![RiscVItem::Inst(Inst::Lw(reg, offset, Sp))]
         } else {
             vec![
@@ -291,8 +321,8 @@ fn gen_value(
         Binary(binary) => {
             let rd = T2;
             let name = func_data.dfg().value(value).name().as_deref().unwrap();
-            let second = name.chars().skip(1).next().unwrap();
-            let last = name.split('_').last().unwrap();
+            let second = name.chars().nth(1).unwrap();
+            let last = name.split('_').next_back().unwrap();
             if second == 'L' || last != "br" {
                 match (binary.lhs(), binary.op(), binary.rhs()) {
                     (l, BinaryOp::Mul, r) | (r, BinaryOp::Mul, l) if matches!(func_data.dfg().value(l).kind(), Integer(i) if i.value().count_ones() == 1) =>
@@ -397,8 +427,8 @@ fn gen_value(
         Branch(branch) => {
             let cond = branch.cond();
             let name = func_data.dfg().value(cond).name().as_deref().unwrap();
-            let second = name.chars().skip(1).next().unwrap();
-            let last = name.split('_').last().unwrap();
+            let second = name.chars().nth(1).unwrap();
+            let last = name.split('_').next_back().unwrap();
             let true_label = context.labels.get(&branch.true_bb()).unwrap().clone();
             let false_label = context.labels.get(&branch.false_bb()).unwrap().clone();
             if second == 'L' || last != "br" {
@@ -408,39 +438,38 @@ fn gen_value(
                 insts.add_inst(Inst::J(false_label));
             } else {
                 let binary = risk!(func_data.dfg().value(cond).kind(), Binary(binary) => binary);
-                match (binary.lhs(), binary.op(), binary.rhs()) {
-                    (l, op, r) => {
-                        let mut rs_1 = T0;
-                        insts.extend(load_value(context, func_data, l, &mut rs_1));
-                        let mut rs_2 = T1;
-                        insts.extend(load_value(context, func_data, r, &mut rs_2));
-                        match op {
-                            BinaryOp::NotEq => {
-                                insts.add_inst(Inst::Bne(rs_1, rs_2, true_label));
-                                insts.add_inst(Inst::J(false_label));
-                            }
-                            BinaryOp::Eq => {
-                                insts.add_inst(Inst::Beq(rs_1, rs_2, true_label));
-                                insts.add_inst(Inst::J(false_label));
-                            }
-                            BinaryOp::Gt => {
-                                insts.add_inst(Inst::Bgt(rs_1, rs_2, true_label));
-                                insts.add_inst(Inst::J(false_label));
-                            }
-                            BinaryOp::Lt => {
-                                insts.add_inst(Inst::Blt(rs_1, rs_2, true_label));
-                                insts.add_inst(Inst::J(false_label));
-                            }
-                            BinaryOp::Ge => {
-                                insts.add_inst(Inst::Bge(rs_1, rs_2, true_label));
-                                insts.add_inst(Inst::J(false_label));
-                            }
-                            BinaryOp::Le => {
-                                insts.add_inst(Inst::Ble(rs_1, rs_2, true_label));
-                                insts.add_inst(Inst::J(false_label));
-                            }
-                            _ => unreachable!()
+                let (l, op, r) = (binary.lhs(), binary.op(), binary.rhs());
+                {
+                    let mut rs_1 = T0;
+                    insts.extend(load_value(context, func_data, l, &mut rs_1));
+                    let mut rs_2 = T1;
+                    insts.extend(load_value(context, func_data, r, &mut rs_2));
+                    match op {
+                        BinaryOp::NotEq => {
+                            insts.add_inst(Inst::Bne(rs_1, rs_2, true_label));
+                            insts.add_inst(Inst::J(false_label));
                         }
+                        BinaryOp::Eq => {
+                            insts.add_inst(Inst::Beq(rs_1, rs_2, true_label));
+                            insts.add_inst(Inst::J(false_label));
+                        }
+                        BinaryOp::Gt => {
+                            insts.add_inst(Inst::Bgt(rs_1, rs_2, true_label));
+                            insts.add_inst(Inst::J(false_label));
+                        }
+                        BinaryOp::Lt => {
+                            insts.add_inst(Inst::Blt(rs_1, rs_2, true_label));
+                            insts.add_inst(Inst::J(false_label));
+                        }
+                        BinaryOp::Ge => {
+                            insts.add_inst(Inst::Bge(rs_1, rs_2, true_label));
+                            insts.add_inst(Inst::J(false_label));
+                        }
+                        BinaryOp::Le => {
+                            insts.add_inst(Inst::Ble(rs_1, rs_2, true_label));
+                            insts.add_inst(Inst::J(false_label));
+                        }
+                        _ => unreachable!(),
                     }
                 }
             }
@@ -535,7 +564,11 @@ fn func(ir: &Program, func_data: &FunctionData, global_vars: &HashMap<Value, Str
     for (bb, node) in func_data.layout().bbs() {
         let label = context.labels.get(bb).unwrap();
         insts.add_label(label.clone());
-        insts.extend(node.insts().keys().flat_map(|&value| gen_value(ir, global_vars, &context, func_data, value)));
+        insts.extend(
+            node.insts()
+                .keys()
+                .flat_map(|&value| gen_value(ir, global_vars, &context, func_data, value)),
+        );
     }
     insts
 }
@@ -566,9 +599,16 @@ pub fn generate(ir: Program) -> RiscV {
     Type::set_ptr_size(4);
     let mut global_vars = HashMap::default();
     let mut global_insts = RiscV::new();
-    for (&value, value_data) in ir.borrow_values().iter().filter(|(_, value_data)| matches!(value_data.kind(), GlobalAlloc(_))) {
+    for (&value, value_data) in ir
+        .borrow_values()
+        .iter()
+        .filter(|(_, value_data)| matches!(value_data.kind(), GlobalAlloc(_)))
+    {
         global_vars.insert(value, value_data.name().as_ref().unwrap()[1..].to_string());
         global_insts.extend(global_var(&ir, value_data));
     }
-    global_insts.into_iter().chain(ir.funcs().values().flat_map(|func_data| func(&ir, func_data, &global_vars))).collect()
+    global_insts
+        .into_iter()
+        .chain(ir.funcs().values().flat_map(|func_data| func(&ir, func_data, &global_vars)))
+        .collect()
 }
